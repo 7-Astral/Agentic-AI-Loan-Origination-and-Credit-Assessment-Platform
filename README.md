@@ -56,6 +56,14 @@ alembic upgrade head         # apply migrations
 
 ### Frontend (`apps/web`)
 
+Next.js only loads `.env` files from inside `apps/web` itself — the repo-root `.env` is not
+read when running `next dev` locally (it's only picked up via `docker compose`'s `env_file`).
+Create `apps/web/.env.local` with at least:
+
+```
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+```
+
 ```sh
 cd apps/web
 pnpm install

@@ -1,0 +1,18 @@
+fastapi
+uvicorn[standard]
+httpx
+pydantic
+pydantic-settings
+python-dotenv
+
+# agent layer
+langgraph
+langchain-core
+langchain-openai
+langchain-google-genai
+
+sqlalchemy[asyncio]
+asyncpg
+langgraph-checkpoint-postgres
+psycopg[binary,pool]
+python-multipart

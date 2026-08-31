@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException, Query, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from fastapi.middleware.cors import CORSMiddleware
 
 from .db import get_session
 from .models import LoanType, Category, Product, DocumentType, DocumentRequirement

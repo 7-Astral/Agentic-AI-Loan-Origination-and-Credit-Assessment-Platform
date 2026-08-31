@@ -145,3 +145,20 @@ async def upload_document(
     if document.status == "needs_reupload":
         response["reason"] = result["notes"] or "Document does not appear to match the required type."
     return response
+
+@router.post("/{session_id}/documents/next", status_code=201)
+async def upload_next_required_document(
+    request: Request,
+    session_id: str,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_session),
+):
+    required = await list_required_documents(request, session_id, db)
+    next_needed = next((d for d in required["documents"] if d["status"] == "not_uploaded"), None)
+    if next_needed is None:
+        raise HTTPException(409, "All required documents have already been provided")
+
+    return await upload_document(
+        request=request, session_id=session_id,
+        verification_type=next_needed["code"], file=file, db=db,
+    )

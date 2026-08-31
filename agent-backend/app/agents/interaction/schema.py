@@ -2,6 +2,7 @@ from typing import Any
 
 
 class SlotConditionError(ValueError):
+    pass
 
 
 def is_required(slot: dict, filled: dict[str, Any]) -> bool | None:

@@ -1,6 +1,6 @@
-"use client";
+﻿"use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type CSSProperties } from "react";
 import {
   Bell,
   Bot,
@@ -21,61 +21,54 @@ import {
 
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
-import { createConversation, getBank, getConversation, sendConversationMessage } from "@/lib/api";
-import type { Bank, LoanType } from "@/lib/types/bank";
-import type { ConversationMessage, ConversationStatus } from "@/lib/types/conversation";
+import { Progress as ProgressBar } from "@/components/ui/progress";
+import {
+  checkHealth,
+  getApplication,
+  listRequiredDocuments,
+  sendMessage,
+  startApplication,
+  uploadNextDocument,
+} from "@/lib/api";
+import type { Progress, TranscriptMessage } from "@/lib/types/application";
 import { cn, hexToHslTriplet } from "@/lib/utils";
 
-const BANK_SLUG = "demo-mutual";
+const BRAND_COLOR = "#0f4c3a";
+const SESSION_STORAGE_KEY = "loan-origination:session";
 
 const NAV_LINKS = ["Dashboard", "Applications", "Documents", "Support"];
 
 const QUICK_REPLIES = ["What are current rates?", "How much can I borrow?", "Talk to a human"];
 
 const LOAN_OPTIONS: {
-  type: LoanType;
   label: string;
   description: string;
   icon: typeof Home;
 }[] = [
-  {
-    type: "home",
-    label: "Home Loans",
-    description: "Mortgages & refinancing options.",
-    icon: Home,
-  },
-  {
-    type: "investment",
-    label: "Investment Loans",
-    description: "Build your property portfolio.",
-    icon: TrendingUp,
-  },
-  {
-    type: "personal",
-    label: "Personal Loans",
-    description: "Vehicles, renovations, or debt consolidation.",
-    icon: User,
-  },
-  {
-    type: "business",
-    label: "Business Loans",
-    description: "Funding for growth and operations.",
-    icon: Building2,
-  },
-];
+    {
+      label: "Home Loans",
+      description: "Mortgages & refinancing options.",
+      icon: Home,
+    },
+    {
+      label: "Investment Loans",
+      description: "Build your property portfolio.",
+      icon: TrendingUp,
+    },
+    {
+      label: "Personal Loans",
+      description: "Vehicles, renovations, or debt consolidation.",
+      icon: User,
+    },
+    {
+      label: "Business Loans",
+      description: "Funding for growth and operations.",
+      icon: Building2,
+    },
+  ];
 
-// Baseline question set is [employment, income, income_frequency, monthly_expenses,
-// existing_debts, existing_debt_amount?, dependents, loan_amount, loan_term_years, ...type-specific].
-// "Financial Profile" starts once we're past dependents, i.e. asking loan amount/term/specifics.
-const FINANCIAL_PROFILE_START_INDEX = 7;
-
-type PageState = "loading" | "not-found" | "error" | "ready";
+type PageState = "loading" | "error" | "ready";
 type StepStatus = "complete" | "active" | "pending";
-
-function storageKey(slug: string): string {
-  return `loan-origination:conversation:${slug}`;
-}
 
 function prettifyKey(key: string): string {
   const spaced = key.replace(/_/g, " ");
@@ -90,20 +83,19 @@ function formatValue(value: unknown): string {
 
 export default function ApplyPage() {
   const [pageState, setPageState] = useState<PageState>("loading");
-  const [bank, setBank] = useState<Bank | null>(null);
 
-  const [conversationId, setConversationId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<ConversationMessage[]>([]);
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [totalQuestions, setTotalQuestions] = useState(0);
-  const [status, setStatus] = useState<ConversationStatus>("active");
-  const [collectedData, setCollectedData] = useState<Record<string, unknown>>({});
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<TranscriptMessage[]>([]);
+  const [progress, setProgress] = useState<Progress | null>(null);
+  const [filled, setFilled] = useState<Record<string, unknown>>({});
+  const [complete, setComplete] = useState(false);
 
   const [draft, setDraft] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [isSidebarOpen, setSidebarOpen] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -111,47 +103,36 @@ export default function ApplyPage() {
     async function init() {
       setPageState("loading");
 
-      let bankData: Bank | null;
       try {
-        bankData = await getBank(BANK_SLUG);
+        await checkHealth();
       } catch {
         if (!cancelled) setPageState("error");
         return;
       }
       if (cancelled) return;
 
-      if (!bankData) {
-        setPageState("not-found");
-        return;
-      }
-      setBank(bankData);
-
-      const key = storageKey(BANK_SLUG);
-      const storedId = sessionStorage.getItem(key);
+      const storedId = sessionStorage.getItem(SESSION_STORAGE_KEY);
 
       if (storedId) {
-        const resumed = await getConversation(storedId).catch(() => null);
+        const resumed = await getApplication(storedId).catch(() => null);
         if (resumed && !cancelled) {
-          setConversationId(resumed.id);
-          setMessages(resumed.messages);
-          setCurrentQuestionIndex(resumed.current_question_index);
-          setTotalQuestions(resumed.total_questions);
-          setStatus(resumed.status);
-          setCollectedData(resumed.collected_data);
+          setSessionId(resumed.session_id);
+          setMessages(resumed.transcript);
+          setProgress(resumed.progress);
+          setFilled(resumed.filled);
+          setComplete(resumed.progress.complete);
           setPageState("ready");
           return;
         }
-        sessionStorage.removeItem(key);
+        sessionStorage.removeItem(SESSION_STORAGE_KEY);
       }
 
       try {
-        const created = await createConversation(bankData.id);
+        const started = await startApplication();
         if (cancelled) return;
-        sessionStorage.setItem(key, created.conversation_id);
-        setConversationId(created.conversation_id);
-        setMessages([
-          { role: "assistant", content: created.message, created_at: new Date().toISOString() },
-        ]);
+        sessionStorage.setItem(SESSION_STORAGE_KEY, started.session_id);
+        setSessionId(started.session_id);
+        setMessages(started.question ? [{ role: "assistant", content: started.question }] : []);
         setPageState("ready");
       } catch {
         if (!cancelled) setPageState("error");
@@ -170,32 +151,29 @@ export default function ApplyPage() {
 
   async function submitMessage(content: string) {
     const trimmed = content.trim();
-    if (!conversationId || trimmed.length === 0 || isSending || status === "completed") return;
+    if (!sessionId || trimmed.length === 0 || isSending || complete) return;
 
-    setMessages((prev) => [
-      ...prev,
-      { role: "user", content: trimmed, created_at: new Date().toISOString() },
-    ]);
+    setMessages((prev) => [...prev, { role: "user", content: trimmed }]);
     setDraft("");
     setIsSending(true);
 
     try {
-      const result = await sendConversationMessage(conversationId, trimmed);
+      const result = await sendMessage(sessionId, trimmed);
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: result.message, created_at: new Date().toISOString() },
+        {
+          role: "assistant",
+          content: result.question ?? "That's everything I need. Your application is complete.",
+        },
       ]);
-      setCurrentQuestionIndex(result.current_question_index);
-      setTotalQuestions(result.total_questions);
-      setStatus(result.status);
-      setCollectedData(result.collected_data);
+      setProgress(result.progress);
+      setComplete(result.complete);
     } catch {
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
           content: "Sorry, something went wrong sending that. Please try again.",
-          created_at: new Date().toISOString(),
         },
       ]);
     } finally {
@@ -203,24 +181,72 @@ export default function ApplyPage() {
     }
   }
 
+  async function handleFileSelected(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !sessionId || isSending) return;
+
+    setMessages((prev) => [...prev, { role: "user", content: `?? ${file.name}` }]);
+    setIsSending(true);
+
+    try {
+      const result = await uploadNextDocument(sessionId, file);
+      const text =
+        result.status === "extracted"
+          ? "Thanks - that's been received and processed."
+          : result.status === "needs_reupload"
+            ? `That doesn't look right. ${result.reason ?? ""}`.trim()
+            : "Received.";
+      setMessages((prev) => [...prev, { role: "assistant", content: text }]);
+    } catch (error) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: error instanceof Error ? error.message : "Sorry, that upload didn't go through.",
+        },
+      ]);
+    } finally {
+      setIsSending(false);
+    }
+  }
+
+  async function handleAttachClick() {
+    if (!sessionId || isSending) return;
+
+    setIsSending(true);
+    try {
+      const required = await listRequiredDocuments(sessionId);
+      const next = required.find((d) => d.status === "not_uploaded" || d.status === "needs_reupload");
+      if (!next) {
+        setMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: "All required documents have already been provided." },
+        ]);
+        return;
+      }
+
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: `Please attach your ${next.name.toLowerCase()}.` },
+      ]);
+      fileInputRef.current?.click();
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: "Couldn't check required documents. Please try again." },
+      ]);
+    } finally {
+      setIsSending(false);
+    }
+  }
   if (pageState === "loading") {
     return (
       <div className="flex h-dvh items-center justify-center text-muted-foreground">Loading...</div>
     );
   }
 
-  if (pageState === "not-found") {
-    return (
-      <div className="flex h-dvh flex-col items-center justify-center gap-2 p-6 text-center">
-        <h1 className="text-xl font-semibold">We couldn&apos;t reach the loan advisor</h1>
-        <p className="text-muted-foreground">
-          The backend has no bank configured yet. Run the seed script and refresh.
-        </p>
-      </div>
-    );
-  }
-
-  if (pageState === "error" || !bank) {
+  if (pageState === "error") {
     return (
       <div className="flex h-dvh flex-col items-center justify-center gap-2 p-6 text-center">
         <h1 className="text-xl font-semibold">Something went wrong</h1>
@@ -230,30 +256,27 @@ export default function ApplyPage() {
   }
 
   const themeStyle = {
-    "--primary": hexToHslTriplet(bank.branding.primary_color),
-  } as React.CSSProperties;
+    "--primary": hexToHslTriplet(BRAND_COLOR),
+  } as CSSProperties;
 
-  const loanTypeKnown = totalQuestions > 0 || status === "completed";
+  const loanTypeKnown = progress !== null || complete;
   const showOptions = !loanTypeKnown && !isSending;
-  const overallPercent =
-    status === "completed"
-      ? 100
-      : totalQuestions > 0
-        ? Math.round((currentQuestionIndex / totalQuestions) * 100)
-        : 0;
+  const totalKnown = progress ? progress.answered + progress.remaining_known : 0;
+  const overallPercent = complete ? 100 : totalKnown > 0 ? Math.round((progress!.answered / totalKnown) * 100) : 0;
+
+  const currentPhase = progress?.current_phase ?? null;
 
   const goalsStatus: StepStatus = loanTypeKnown ? "complete" : "active";
   const basicInfoStatus: StepStatus = !loanTypeKnown
     ? "pending"
-    : currentQuestionIndex < FINANCIAL_PROFILE_START_INDEX && status !== "completed"
-      ? "active"
-      : "complete";
-  const financialProfileStatus: StepStatus =
-    !loanTypeKnown || currentQuestionIndex < FINANCIAL_PROFILE_START_INDEX
-      ? "pending"
-      : status === "completed"
-        ? "complete"
-        : "active";
+    : complete || (currentPhase !== null && currentPhase > 2)
+      ? "complete"
+      : "active";
+  const financialProfileStatus: StepStatus = !loanTypeKnown || (currentPhase !== null && currentPhase <= 2)
+    ? "pending"
+    : complete
+      ? "complete"
+      : "active";
 
   const steps: { id: string; title: string; description: string; status: StepStatus }[] = [
     {
@@ -276,14 +299,13 @@ export default function ApplyPage() {
     },
   ];
 
-  const progressHelperText =
-    status === "completed"
-      ? "All done! A loan specialist will review your enquiry."
-      : overallPercent === 0
-        ? "Let's start by understanding your goals in the chat."
-        : "Keep chatting with the AI to complete your enquiry.";
+  const progressHelperText = complete
+    ? "All done! A loan specialist will review your enquiry."
+    : overallPercent === 0
+      ? "Let's start by understanding your goals in the chat."
+      : "Keep chatting with the AI to complete your enquiry.";
 
-  const collectedEntries = Object.entries(collectedData);
+  const collectedEntries = Object.entries(filled);
 
   const sidebarContent = (
     <div className="flex flex-col gap-6">
@@ -299,7 +321,7 @@ export default function ApplyPage() {
             {overallPercent}%
           </Badge>
         </div>
-        <Progress value={overallPercent} />
+        <ProgressBar value={overallPercent} />
         <p className="mt-3 text-sm text-muted-foreground">{progressHelperText}</p>
       </div>
 
@@ -358,7 +380,7 @@ export default function ApplyPage() {
         <div className="flex items-center gap-8">
           <span className="flex items-center gap-2 text-lg font-semibold text-primary">
             <Landmark className="h-5 w-5" aria-hidden="true" />
-            LendFlow AI
+            LendFlowq AI
           </span>
           <nav className="hidden items-center gap-6 md:flex">
             {NAV_LINKS.map((link, index) => (
@@ -429,11 +451,6 @@ export default function ApplyPage() {
                         <Badge variant="secondary" className="text-primary">
                           VERIFIED AI
                         </Badge>
-                        <span className="text-muted-foreground">
-                          {index === 0
-                            ? "Just now"
-                            : new Date(message.created_at).toLocaleTimeString()}
-                        </span>
                       </div>
                       <div className="rounded-lg bg-secondary px-4 py-3 text-sm text-secondary-foreground">
                         {message.content}
@@ -450,11 +467,11 @@ export default function ApplyPage() {
               </div>
             ))}
 
-            {showOptions && (
+            {/* {showOptions && (
               <div className="grid grid-cols-1 gap-3 pl-12 sm:grid-cols-2">
                 {LOAN_OPTIONS.map((option) => (
                   <button
-                    key={option.type}
+                    key={option.label}
                     type="button"
                     onClick={() => void submitMessage(`I'm interested in ${option.label}`)}
                     className="flex flex-col items-start gap-2 rounded-lg border border-border bg-background p-4 text-left transition-colors hover:border-primary hover:bg-secondary/50"
@@ -465,7 +482,7 @@ export default function ApplyPage() {
                   </button>
                 ))}
               </div>
-            )}
+            )} */}
 
             {isSending && (
               <div className="flex gap-3">
@@ -480,7 +497,7 @@ export default function ApplyPage() {
           </div>
 
           <div className="shrink-0 space-y-3 border-t border-border p-4 sm:space-y-4 sm:p-6">
-            {status === "completed" ? (
+            {complete ? (
               <p className="text-center text-sm text-muted-foreground">
                 This enquiry is complete. A loan specialist will be in touch.
               </p>
@@ -505,9 +522,17 @@ export default function ApplyPage() {
                   }}
                   className="flex items-center gap-2"
                 >
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*,.pdf"
+                    className="hidden"
+                    onChange={handleFileSelected}
+                  />
                   <button
                     type="button"
                     aria-label="Attach file"
+                    onClick={() => void handleAttachClick()}
                     className="text-muted-foreground hover:text-foreground"
                   >
                     <Paperclip className="h-5 w-5" />

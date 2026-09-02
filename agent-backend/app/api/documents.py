@@ -12,6 +12,7 @@ from app.services.core_banking import core_banking
 from app.services.storage import storage
 from app.agents.document.extractor import extract as extract_document
 from app.models.documents import Document, DocumentExtraction
+from app.agents.document.categorize import categorize_transactions
 
 router = APIRouter(prefix="/api/v1/applications", tags=["documents"])
 
@@ -110,6 +111,9 @@ async def upload_document(
 
     if result["matches_claimed_type"]:
         document.status = "extracted"
+        fields = result["fields"]
+        if verification_type == "bank_statements" and fields.get("transactions"):
+            fields["transactions"] = await categorize_transactions(fields["transactions"])
         db.add(DocumentExtraction(
             document_id=document.id,
             extracted_fields=result["fields"],
@@ -162,3 +166,4 @@ async def upload_next_required_document(
         request=request, session_id=session_id,
         verification_type=next_needed["code"], file=file, db=db,
     )
+

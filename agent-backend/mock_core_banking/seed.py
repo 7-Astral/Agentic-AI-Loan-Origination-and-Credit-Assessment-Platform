@@ -119,6 +119,40 @@ DOCUMENT_REQUIREMENTS = [
     {"loan_type_code": "business", "category_code": "equipment", "document_type_code": "tax_return"},
     {"loan_type_code": "business", "category_code": "equipment", "document_type_code": "contract_of_sale"},
 ]
+
+
+from datetime import date
+
+POLICY_SETTINGS = [
+    {
+        "key": "shading_rates", "version": "2026.09-v1",
+        "effective_from": date(2026, 1, 1),
+        "document": {
+            "full_time_employed": 1.0,
+            "part_time_employed": 1.0,
+            "casual": 0.8,
+            "self_employed": 0.8,
+        },
+    },
+    {
+        "key": "hem_benchmarks", "version": "2026.09-v1",
+        "effective_from": date(2026, 1, 1),
+        "document": {
+            "1": 2200, "2": 3100, "3": 3700, "4": 4200, "5": 4700,
+        },
+    },
+    {
+        "key": "assessment_rate_buffer", "version": "2026.09-v1",
+        "effective_from": date(2026, 1, 1),
+        "document": {"buffer_pct": 3.0},
+    },
+    {
+        "key": "nsr_minimum", "version": "2026.09-v1",
+        "effective_from": date(2026, 1, 1),
+        "document": {"minimum": 1.0},
+    },
+]
+
 async def seed():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -141,6 +175,9 @@ async def seed():
 
         for dr in DOCUMENT_REQUIREMENTS:
             session.add(DocumentRequirement(**dr))
+        
+        for ps in POLICY_SETTINGS:
+            session.add(PolicySetting(**ps))
         
         await session.commit()
 

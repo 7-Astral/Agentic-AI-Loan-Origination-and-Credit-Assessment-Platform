@@ -18,6 +18,7 @@ from app.services.core_banking import core_banking
 from app.api.documents import router as documents_router
 from app.core.db import Base, engine
 from app.models.documents import Document, DocumentExtraction, VerificationResult 
+from app.api.assessment import router as assessment_router
 
 settings = get_settings()
 
@@ -51,6 +52,7 @@ app.add_middleware(
 
 app.include_router(interview_router)
 app.include_router(documents_router)
+app.include_router(assessment_router)
 
 @app.get("/health")
 def health():

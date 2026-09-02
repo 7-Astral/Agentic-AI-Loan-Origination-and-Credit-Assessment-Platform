@@ -40,4 +40,11 @@ class CoreBankingClient:
         return await self._get(
             f"/api/v1/loan-types/{loan_type}/categories/{category}/document-requirements"
         )
+
+    async def get_policy(self, key: str) -> dict:
+        return await self._get(f"/api/v1/policy/{key}")
+
+    async def get_rules(self, framework: str) -> list[dict]:
+        data = await self._get("/api/v1/rules", params={"framework": framework})
+        return data["rules"]
 core_banking = CoreBankingClient()

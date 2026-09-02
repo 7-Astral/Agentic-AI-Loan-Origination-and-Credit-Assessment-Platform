@@ -5,7 +5,7 @@ from sqlalchemy import select
 from fastapi.middleware.cors import CORSMiddleware
 
 from .db import get_session
-from .models import LoanType, Category, Product, DocumentType, DocumentRequirement
+from .models import LoanType, Category, Product, DocumentType, DocumentRequirement, PolicySetting, Rule
 from .slots.registry import schema_for
 
 app = FastAPI(title="Mock Core Banking API", version="0.1.0")
@@ -183,3 +183,22 @@ async def get_document_requirements(
         "category": category,
         "documents": [{"code": r[0], "name": r[1]} for r in rows],
     }
+
+
+@app.get("/api/v1/policy/{key}")
+async def get_policy(key: str, session: AsyncSession = Depends(get_session)):
+    stmt = select(PolicySetting).where(PolicySetting.key == key).order_by(PolicySetting.effective_from.desc())
+    result = await session.execute(stmt)
+    setting = result.scalars().first()
+    if setting is None:
+        raise HTTPException(404, f"No policy setting for '{key}'")
+    return {"key": setting.key, "version": setting.version, "document": setting.document}
+
+@app.get("/api/v1/rules")
+async def get_rules(framework: str | None = None, session: AsyncSession = Depends(get_session)):
+    stmt = select(Rule)
+    if framework:
+        stmt = stmt.where(Rule.framework == framework)
+    result = await session.execute(stmt)
+    rules = result.scalars().all()
+    return {"rules": [{"rule_id": r.rule_id, "framework": r.framework, **r.document} for r in rules]}

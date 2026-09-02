@@ -1,6 +1,6 @@
-from sqlalchemy import String, Integer, Float, Boolean, ForeignKey, ForeignKeyConstraint, ARRAY, Text, UniqueConstraint
+from sqlalchemy import String, Integer, Float, Boolean, ForeignKey, ForeignKeyConstraint, ARRAY, Text, UniqueConstraint, JSON
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-
+from datetime import date as date_type
 
 class Base(DeclarativeBase):
     pass
@@ -81,3 +81,27 @@ class DocumentRequirement(Base):
     loan_type_code: Mapped[str] = mapped_column(String(30))
     category_code: Mapped[str] = mapped_column(String(30))
     document_type_code: Mapped[str] = mapped_column(ForeignKey("document_types.code"))
+
+
+from sqlalchemy import Date
+from datetime import date as date_type
+
+class PolicySetting(Base):
+    __tablename__ = "policy_settings"
+    __table_args__ = (
+        UniqueConstraint("key", "version", name="uq_policy_key_version"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    key: Mapped[str] = mapped_column(String(50))
+    version: Mapped[str] = mapped_column(String(20))
+    document: Mapped[dict] = mapped_column(JSON)
+    effective_from: Mapped[date_type] = mapped_column(Date)
+
+class Rule(Base):
+    __tablename__ = "rules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    rule_id: Mapped[str] = mapped_column(String(50), unique=True)
+    framework: Mapped[str] = mapped_column(String(20))
+    document: Mapped[dict] = mapped_column(JSON)

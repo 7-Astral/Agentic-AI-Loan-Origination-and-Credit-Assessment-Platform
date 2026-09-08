@@ -17,6 +17,7 @@ async def _create_bank_with_product(slug: str) -> None:
             slug=slug,
             branding={"primary_color": "#123456", "logo_url": "/logos/test.svg"},
             status=BankStatus.active,
+            is_test=True,
         )
         db.add(bank)
         await db.flush()

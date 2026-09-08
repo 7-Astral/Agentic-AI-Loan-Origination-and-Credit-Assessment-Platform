@@ -1,19 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useParams } from "next/navigation";
 import {
-  Bell,
   Bot,
   Building2,
   Check,
   Home,
-  Landmark,
   LayoutGrid,
   Lightbulb,
   Paperclip,
-  Search,
   Send,
-  Settings,
   TrendingUp,
   User,
   X,
@@ -26,10 +23,6 @@ import { createConversation, getBank, getConversation, sendConversationMessage }
 import type { Bank, LoanType } from "@/lib/types/bank";
 import type { ConversationMessage, ConversationStatus } from "@/lib/types/conversation";
 import { cn, hexToHslTriplet } from "@/lib/utils";
-
-const BANK_SLUG = "demo-mutual";
-
-const NAV_LINKS = ["Dashboard", "Applications", "Documents", "Support"];
 
 const QUICK_REPLIES = ["What are current rates?", "How much can I borrow?", "Talk to a human"];
 
@@ -88,7 +81,8 @@ function formatValue(value: unknown): string {
   return String(value);
 }
 
-export default function ApplyPage() {
+export default function HomePage() {
+  const { bankSlug } = useParams<{ bankSlug: string }>();
   const [pageState, setPageState] = useState<PageState>("loading");
   const [bank, setBank] = useState<Bank | null>(null);
 
@@ -113,7 +107,7 @@ export default function ApplyPage() {
 
       let bankData: Bank | null;
       try {
-        bankData = await getBank(BANK_SLUG);
+        bankData = await getBank(bankSlug);
       } catch {
         if (!cancelled) setPageState("error");
         return;
@@ -126,7 +120,7 @@ export default function ApplyPage() {
       }
       setBank(bankData);
 
-      const key = storageKey(BANK_SLUG);
+      const key = storageKey(bankSlug);
       const storedId = sessionStorage.getItem(key);
 
       if (storedId) {
@@ -162,7 +156,7 @@ export default function ApplyPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [bankSlug]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -205,13 +199,15 @@ export default function ApplyPage() {
 
   if (pageState === "loading") {
     return (
-      <div className="flex h-dvh items-center justify-center text-muted-foreground">Loading...</div>
+      <div className="flex flex-1 items-center justify-center text-muted-foreground">
+        Loading...
+      </div>
     );
   }
 
   if (pageState === "not-found") {
     return (
-      <div className="flex h-dvh flex-col items-center justify-center gap-2 p-6 text-center">
+      <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
         <h1 className="text-xl font-semibold">We couldn&apos;t reach the loan advisor</h1>
         <p className="text-muted-foreground">
           The backend has no bank configured yet. Run the seed script and refresh.
@@ -222,7 +218,7 @@ export default function ApplyPage() {
 
   if (pageState === "error" || !bank) {
     return (
-      <div className="flex h-dvh flex-col items-center justify-center gap-2 p-6 text-center">
+      <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
         <h1 className="text-xl font-semibold">Something went wrong</h1>
         <p className="text-muted-foreground">Please refresh the page to try again.</p>
       </div>
@@ -353,66 +349,17 @@ export default function ApplyPage() {
   );
 
   return (
-    <div className="flex h-dvh flex-col" style={themeStyle}>
-      <header className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4 sm:h-16 sm:px-6">
-        <div className="flex items-center gap-8">
-          <span className="flex items-center gap-2 text-lg font-semibold text-primary">
-            <Landmark className="h-5 w-5" aria-hidden="true" />
-            LendFlow AI
-          </span>
-          <nav className="hidden items-center gap-6 md:flex">
-            {NAV_LINKS.map((link, index) => (
-              <a
-                key={link}
-                href="#"
-                className={cn(
-                  "border-b-2 border-transparent pb-0.5 text-sm",
-                  index === 0
-                    ? "border-primary font-medium text-primary"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {link}
-              </a>
-            ))}
-          </nav>
-        </div>
-
-        <div className="flex items-center gap-3 sm:gap-4">
-          <button
-            type="button"
-            onClick={() => setSidebarOpen(true)}
-            aria-label="View application progress"
-            className="text-muted-foreground hover:text-foreground lg:hidden"
-          >
-            <LayoutGrid className="h-5 w-5" />
-          </button>
-          <button
-            type="button"
-            aria-label="Search"
-            className="hidden text-muted-foreground hover:text-foreground sm:block"
-          >
-            <Search className="h-5 w-5" />
-          </button>
-          <button
-            type="button"
-            aria-label="Notifications"
-            className="hidden text-muted-foreground hover:text-foreground sm:block"
-          >
-            <Bell className="h-5 w-5" />
-          </button>
-          <button
-            type="button"
-            aria-label="Settings"
-            className="hidden text-muted-foreground hover:text-foreground sm:block"
-          >
-            <Settings className="h-5 w-5" />
-          </button>
-          <Avatar className="bg-secondary text-secondary-foreground">
-            <User className="h-5 w-5" aria-hidden="true" />
-          </Avatar>
-        </div>
-      </header>
+    <div className="flex min-h-0 flex-1 flex-col" style={themeStyle}>
+      <div className="flex items-center justify-end border-b border-border px-4 py-2 lg:hidden">
+        <button
+          type="button"
+          onClick={() => setSidebarOpen(true)}
+          className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <LayoutGrid className="h-4 w-4" aria-hidden="true" />
+          View application progress
+        </button>
+      </div>
 
       <div className="flex min-h-0 flex-1">
         <div className="flex min-h-0 flex-1 flex-col">

@@ -10,18 +10,21 @@ from models.bank import Bank
 from models.conversation import Conversation
 from models.enums import BankStatus, LoanType
 from models.loan_product import LoanProduct
-from scripts.seed import seed
+from scripts.seed import HOME_PROMPT_FOCUS, seed
 
 
 class FakeLLM:
     """Never calls a real API. `complete` returns a canned reply; `extract` returns queued
     canned JSON responses (used for Stage 1 loan-type identification, and as the fallback
-    only when deterministic answer parsing fails)."""
+    only when deterministic answer parsing fails). Records every `system_prompt` it was
+    called with, so tests can assert on prompt content (e.g. the loan-type focus fragment)."""
 
     def __init__(self, extract_queue: list[str] | None = None) -> None:
         self._extract_queue = list(extract_queue or [])
+        self.system_prompts: list[str] = []
 
     async def complete(self, system_prompt: str, messages: list[ChatMessage]) -> str:
+        self.system_prompts.append(system_prompt)
         return "(agent reply)"
 
     async def extract(self, instruction: str, text: str) -> str:
@@ -37,6 +40,7 @@ async def _create_bank_with_home_product() -> Bank:
             slug=f"orch-{uuid.uuid4().hex[:8]}",
             branding={"primary_color": "#000000", "logo_url": "/x.svg"},
             status=BankStatus.active,
+            is_test=True,
         )
         db.add(bank)
         await db.flush()
@@ -96,6 +100,33 @@ async def test_valid_answer_advances_index_invalid_answer_does_not() -> None:
         await db.commit()
         assert conversation.current_question_index == first_index + 1
         assert conversation.collected_data["employment_status"] == "Full-time"
+
+
+async def test_system_prompt_includes_loan_focus_from_first_question_onward() -> None:
+    """Regression test for the _system_prompt timing fix: the prompt used for the very first
+    stage-2 question (asked in the same turn the loan type is identified) must already
+    include that loan type's focus fragment, not the previous turn's stale baseline-only
+    prompt."""
+    await seed()
+    bank = await _create_bank_with_home_product()
+
+    async with AsyncSessionLocal() as db:
+        conversation = Conversation(bank_id=bank.id)
+        db.add(conversation)
+        await db.flush()
+        conversation_id = conversation.id
+        await start_conversation(db, conversation, bank, llm=FakeLLM())
+        await db.commit()
+
+    async with AsyncSessionLocal() as db:
+        conversation = await _get(db, conversation_id)
+        llm = FakeLLM(extract_queue=['{"loan_type": "home"}'])
+        await handle_customer_message(db, conversation, bank, "I want to buy a home", llm=llm)
+        await db.commit()
+
+        assert conversation.selected_loan_type == LoanType.home
+        assert len(llm.system_prompts) == 1
+        assert HOME_PROMPT_FOCUS in llm.system_prompts[0]
 
 
 async def _get(db: AsyncSession, conversation_id: uuid.UUID) -> Conversation:

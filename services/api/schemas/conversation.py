@@ -5,6 +5,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 from models.enums import ConversationStatus, LoanType, MessageRole
+from schemas.risk_assessment import FiveCKey
 
 
 class ConversationCreateRequest(BaseModel):
@@ -46,3 +47,23 @@ class ConversationStateResponse(BaseModel):
     collected_data: dict[str, Any]
     status: ConversationStatus
     messages: list[MessageOut]
+
+
+class RequestDetailsRequest(BaseModel):
+    five_c: FiveCKey
+    # Human-readable labels of the specific missing/low-confidence fields for this C, taken
+    # from the risk report's completeness.missing_fields — lets the generated message name
+    # exactly what's needed rather than a generic ask.
+    missing_fields: list[str] = []
+
+
+class ConversationSummary(BaseModel):
+    id: uuid.UUID
+    bank_id: uuid.UUID
+    bank_name: str
+    selected_loan_type: LoanType | None
+    status: ConversationStatus
+    current_question_index: int
+    total_questions: int
+    created_at: datetime
+    updated_at: datetime

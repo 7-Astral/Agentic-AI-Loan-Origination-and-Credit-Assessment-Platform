@@ -15,6 +15,9 @@ dependencies = [
     "langgraph>=0.2,<1.0",
     "anthropic>=0.34,<1.0",
     "httpx>=0.27,<1.0",
+    "pyjwt>=2.9,<3.0",
+    "passlib[argon2]>=1.7,<2.0",
+    "argon2-cffi>=23.1,<24.0",
 ]
 
 [project.optional-dependencies]
@@ -34,7 +37,7 @@ build-backend = "setuptools.build_meta"
 py-modules = ["main"]
 
 [tool.setuptools.packages.find]
-include = ["core*", "models*", "schemas*", "routers*", "agents*", "integration*"]
+include = ["core*", "models*", "schemas*", "routers*", "agents*", "integration*", "auth*"]
 
 [tool.ruff]
 line-length = 100

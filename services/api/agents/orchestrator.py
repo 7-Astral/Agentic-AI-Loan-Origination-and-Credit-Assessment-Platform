@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agents.clients.base import ChatMessage, LLMProvider
-from agents.prompts.loader import get_active_prompt_template
+from agents.prompts.loader import get_system_prompt_content
 from agents.prompts.renderer import render_prompt
 from agents.questions.answer_resolver import resolve_answer
 from agents.questions.loader import get_question_set
@@ -59,9 +59,12 @@ async def _load_history(db: AsyncSession, conversation_id: uuid.UUID) -> list[Ch
     return [ChatMessage(role=m.role.value, content=m.content) for m in result.scalars().all()]
 
 
-async def _system_prompt(db: AsyncSession, bank: Bank, products: list[LoanProduct]) -> str:
-    template = await get_active_prompt_template(db, bank.id)
-    content = template.content if template is not None else FALLBACK_SYSTEM_PROMPT
+async def _system_prompt(
+    db: AsyncSession, bank: Bank, products: list[LoanProduct], loan_type: LoanType | None
+) -> str:
+    content = await get_system_prompt_content(db, bank.id, loan_type)
+    if content is None:
+        content = FALLBACK_SYSTEM_PROMPT
     return render_prompt(content, {"bank_name": bank.name, "products": _format_products(products)})
 
 
@@ -141,7 +144,7 @@ async def start_conversation(
 
         llm = get_llm_provider()
     products = await _load_products(db, bank.id)
-    system_prompt = await _system_prompt(db, bank, products)
+    system_prompt = await _system_prompt(db, bank, products, None)
     reply = await llm.complete(system_prompt, [])
     await _save_message(db, conversation.id, MessageRole.assistant, reply)
     return reply
@@ -166,7 +169,7 @@ async def handle_customer_message(
     history = await _load_history(db, conversation.id)
 
     products = await _load_products(db, bank.id)
-    system_prompt = await _system_prompt(db, bank, products)
+    system_prompt = await _system_prompt(db, bank, products, conversation.selected_loan_type)
 
     if conversation.selected_loan_type is None:
         loan_type = await _identify_loan_type(llm, history, products)
@@ -179,6 +182,10 @@ async def handle_customer_message(
         product = _match_product(products, loan_type)
         conversation.selected_loan_type = loan_type
         conversation.selected_product_id = product.id if product else None
+        # loan_type was just identified this turn, so the prompt computed above (using the
+        # conversation's pre-update selected_loan_type, still None) is stale — recompute so
+        # the loan-type-focused prompt applies from this very question onward.
+        system_prompt = await _system_prompt(db, bank, products, loan_type)
 
         questions = await get_question_set(db, bank.id, loan_type)
         index = resolve_index(questions, conversation.collected_data, 0)

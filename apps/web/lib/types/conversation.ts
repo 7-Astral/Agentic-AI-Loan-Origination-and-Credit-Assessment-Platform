@@ -33,3 +33,15 @@ export interface ConversationState {
   status: ConversationStatus;
   messages: ConversationMessage[];
 }
+
+export interface ConversationSummary {
+  id: string;
+  bank_id: string;
+  bank_name: string;
+  selected_loan_type: LoanType | null;
+  status: ConversationStatus;
+  current_question_index: number;
+  total_questions: number;
+  created_at: string;
+  updated_at: string;
+}

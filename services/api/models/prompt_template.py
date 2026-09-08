@@ -6,6 +6,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from models.base import Base
+from models.enums import LoanType, loan_type_enum
 
 
 class PromptTemplate(Base):
@@ -16,6 +17,9 @@ class PromptTemplate(Base):
         UUID(as_uuid=True), ForeignKey("banks.id"), nullable=True
     )
     agent_name: Mapped[str] = mapped_column(String, nullable=False)
+    # NULL = baseline, shared across all loan types (merged with a type-specific template
+    # once the loan type is known) — same pattern as QuestionTemplate.loan_type.
+    loan_type: Mapped[LoanType | None] = mapped_column(loan_type_enum, nullable=True)
     version: Mapped[int] = mapped_column(Integer, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { AlertTriangle, Landmark, Loader2 } from "lucide-react";
 
@@ -192,6 +193,13 @@ export default function LoginPage() {
               </button>
             </>
           )}
+        </p>
+
+        <p className="mt-3 text-center text-sm text-muted-foreground">
+          Not ready to sign in?{" "}
+          <Link href={`/${bankSlug}`} className="font-medium text-primary hover:underline">
+            Start a loan enquiry
+          </Link>
         </p>
       </div>
     </div>

@@ -413,3 +413,84 @@ async def test_deactivated_officer_cannot_act_even_with_a_valid_token() -> None:
             product_ids=[product_id],
             bank_ids=[bank_id],
         )
+
+
+async def test_admin_sees_all_applications_across_every_bank() -> None:
+    """Admins are modelled with bank_id = None (platform-level, see models/user.py), so
+    their list view has no single bank to scope by — it's a deliberate, role-based "see
+    everything" scope, not a bypass of the ownership rule that applies to every other role."""
+    bank_id = await _create_bank()
+    other_bank_id = await _create_bank("Other Bank")
+    product_id = await _create_product(bank_id)
+    other_product_id = await _create_product(other_bank_id)
+    customer_id = await _create_user(bank_id, UserRole.customer)
+    other_customer_id = await _create_user(other_bank_id, UserRole.customer)
+    admin_id = await _create_user(None, UserRole.admin)
+
+    application_id = await _create_application(
+        bank_id=bank_id, customer_id=customer_id, product_id=product_id
+    )
+    other_application_id = await _create_application(
+        bank_id=other_bank_id, customer_id=other_customer_id, product_id=other_product_id
+    )
+    admin_token = _token(admin_id, UserRole.admin, None)
+
+    await engine.dispose()
+    try:
+        with TestClient(app) as client:
+            response = client.get(
+                "/applications", headers={"Authorization": f"Bearer {admin_token}"}
+            )
+        assert response.status_code == 200
+        ids = {row["id"] for row in response.json()}
+        # This suite runs against a shared dev database (seed data, other tests' fixture
+        # rows), so an admin's "see everything" result can't be asserted as an exact set —
+        # only that it isn't scoped away the two applications from two different banks.
+        assert {str(application_id), str(other_application_id)} <= ids
+    finally:
+        await _cleanup(
+            user_ids=[customer_id, other_customer_id, admin_id],
+            application_ids=[application_id, other_application_id],
+            product_ids=[product_id, other_product_id],
+            bank_ids=[bank_id, other_bank_id],
+        )
+
+
+async def test_admin_gets_the_full_officer_view_but_cannot_act() -> None:
+    """Admin oversight is read-only: the detail view carries the same customer_profile/
+    risk_report/actions an officer would see, but POST .../actions still 403s since
+    require_role() on that endpoint never includes admin."""
+    bank_id = await _create_bank()
+    product_id = await _create_product(bank_id)
+    customer_id = await _create_user(bank_id, UserRole.customer)
+    admin_id = await _create_user(None, UserRole.admin)
+    application_id = await _create_application(
+        bank_id=bank_id, customer_id=customer_id, product_id=product_id
+    )
+    admin_token = _token(admin_id, UserRole.admin, None)
+
+    await engine.dispose()
+    try:
+        with TestClient(app) as client:
+            detail_response = client.get(
+                f"/applications/{application_id}",
+                headers={"Authorization": f"Bearer {admin_token}"},
+            )
+            assert detail_response.status_code == 200
+            body = detail_response.json()
+            assert "actions" in body
+            assert "risk_report" in body
+
+            action_response = client.post(
+                f"/applications/{application_id}/actions",
+                headers={"Authorization": f"Bearer {admin_token}"},
+                json={"action": "approve"},
+            )
+        assert action_response.status_code == 403
+    finally:
+        await _cleanup(
+            user_ids=[customer_id, admin_id],
+            application_ids=[application_id],
+            product_ids=[product_id],
+            bank_ids=[bank_id],
+        )

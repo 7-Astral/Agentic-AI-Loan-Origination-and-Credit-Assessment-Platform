@@ -201,9 +201,12 @@ async def list_applications(
     user: UserClaims = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[ApplicationSummary]:
-    """Same endpoint for both roles, scoped entirely by the authenticated identity — never
+    """Same endpoint for every role, scoped entirely by the authenticated identity — never
     by a client-supplied parameter. A customer gets their own applications; an officer or
-    credit manager gets their bank's queue, optionally filtered by status."""
+    credit manager gets their bank's queue; an admin gets every application, platform-wide
+    (admins are modelled with `bank_id = None` — see models/user.py — so there is no single
+    bank to scope them to). Status filtering applies to every role except customer, whose
+    own application count is small enough that it isn't needed."""
     stmt = (
         select(Application, User.name, LoanProduct.name)
         .join(User, Application.customer_id == User.id)
@@ -216,10 +219,11 @@ async def list_applications(
         if user.bank_id is None:
             raise HTTPException(status_code=403, detail="No bank associated with this account")
         stmt = stmt.where(Application.bank_id == user.bank_id)
-        if status_filter is not None:
-            stmt = stmt.where(Application.status == status_filter)
-    else:
+    elif user.role != UserRole.admin:
         raise HTTPException(status_code=403, detail="Not permitted")
+
+    if status_filter is not None and user.role != UserRole.customer:
+        stmt = stmt.where(Application.status == status_filter)
 
     stmt = stmt.order_by(Application.created_at.desc())
     result = await db.execute(stmt)
@@ -243,6 +247,13 @@ async def get_application(
         return await _build_customer_view(db, application)
     if user.role in (UserRole.loan_officer, UserRole.credit_manager):
         _check_bank_ownership(application, user)
+        return await _build_officer_view(db, application)
+    if user.role == UserRole.admin:
+        # No bank ownership check: an admin has no bank_id to check against by design (see
+        # list_applications) and is trusted with platform-wide read-only oversight. Actually
+        # acting on an application still requires loan_officer/credit_manager — the actions
+        # endpoint's require_role() already excludes admin, so this view being read-only is
+        # enforced there, not here.
         return await _build_officer_view(db, application)
     raise HTTPException(status_code=403, detail="Not permitted")
 

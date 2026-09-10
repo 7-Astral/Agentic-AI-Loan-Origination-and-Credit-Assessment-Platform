@@ -2,6 +2,7 @@ import asyncio
 
 from mock_core_banking.db import engine, async_session
 from mock_core_banking.models import Base, Rule
+from mock_core_banking.seed import DEFAULT_BANK_ID
 
 RULES = [
     {
@@ -48,7 +49,7 @@ async def seed_rules():
 
     async with async_session() as session:
         for r in RULES:
-            session.add(Rule(**r))
+            session.add(Rule(bank_id=DEFAULT_BANK_ID, **r))
         await session.commit()
 
     print("Rules seeded.")

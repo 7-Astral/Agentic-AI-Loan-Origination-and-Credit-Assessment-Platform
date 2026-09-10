@@ -1,8 +1,18 @@
 import asyncio
 
 from mock_core_banking.db import engine, async_session
-from mock_core_banking.models import Base, LoanType, Category, Product
-from mock_core_banking.models import Base, LoanType, Category, Product, DocumentType, DocumentRequirement
+from mock_core_banking.models import (
+    Bank, Base, LoanType, Category, Product, DocumentType, DocumentRequirement,
+    LoanPolicyRow, PolicySetting, PolicyVersion,
+)
+
+DEFAULT_BANK_ID = "default"
+
+BANK = {
+    "id": DEFAULT_BANK_ID, "name": "Default Bank", "slug": "default",
+    "primary_color": "#0f172a", "status": "active", "integration_type": "manual",
+}
+
 LOAN_TYPES = [
     {"code": "personal", "name": "Personal Loan",
      "description": "Unsecured or secured loan for personal use, including vehicles."},
@@ -153,32 +163,61 @@ POLICY_SETTINGS = [
     },
 ]
 
+LOAN_POLICY_ROWS = [
+    {
+        "loan_type_code": lt["loan_type_code"], "category_code": lt["code"],
+        "min_age": "18 years", "residency_policy": "Australian citizen or permanent resident",
+        "deposit_lvr_policy": "Max 95% LVR; LMI applies above 80%",
+        "loan_amount_range": "$5,000 - $2,000,000", "max_term": "30 years",
+        "income_cash_flow_policy": "Verified via payslips/tax returns + bank statements",
+        "serviceability_policy": "NSR >= 1.0 at assessment rate (+3% buffer)",
+        "credit_policy": "No defaults in last 12 months; adverse history reviewed case-by-case",
+    }
+    for lt in CATEGORIES
+]
+
+POLICY_VERSION = {
+    "version": "2026.09-v1",
+    "effective_from": date(2026, 1, 1),
+    "notes": "Initial seeded policy version.",
+}
+
+
 async def seed():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
     async with async_session() as session:
+        session.add(Bank(**BANK))
+        await session.flush()
+
         for lt in LOAN_TYPES:
-            session.add(LoanType(**lt))
+            session.add(LoanType(bank_id=DEFAULT_BANK_ID, **lt))
         await session.flush()
-        
+
         for c in CATEGORIES:
-            session.add(Category(**c))
+            session.add(Category(bank_id=DEFAULT_BANK_ID, **c))
         await session.flush()
-        
+
         for p in PRODUCTS:
-            session.add(Product(**p))
-        
+            session.add(Product(bank_id=DEFAULT_BANK_ID, **p))
+
         for dt in DOCUMENT_TYPES:
-            session.add(DocumentType(**dt))
+            session.add(DocumentType(bank_id=DEFAULT_BANK_ID, **dt))
         await session.flush()
 
         for dr in DOCUMENT_REQUIREMENTS:
-            session.add(DocumentRequirement(**dr))
-        
+            session.add(DocumentRequirement(bank_id=DEFAULT_BANK_ID, **dr))
+
         for ps in POLICY_SETTINGS:
-            session.add(PolicySetting(**ps))
-        
+            session.add(PolicySetting(bank_id=DEFAULT_BANK_ID, **ps))
+
+        policy_version = PolicyVersion(
+            bank_id=DEFAULT_BANK_ID, status="active", **POLICY_VERSION,
+            loan_policy_rows=[LoanPolicyRow(**row) for row in LOAN_POLICY_ROWS],
+        )
+        session.add(policy_version)
+
         await session.commit()
 
     print("Seed complete.")

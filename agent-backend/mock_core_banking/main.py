@@ -1,11 +1,12 @@
 from fastapi import FastAPI, HTTPException, Query, Depends
-from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from fastapi.middleware.cors import CORSMiddleware
 
 from .db import get_session
 from .models import LoanType, Category, Product, DocumentType, DocumentRequirement, PolicySetting, Rule
+from .routers.deps import DEFAULT_BANK_ID
+from .routers import banks, documents, loan_types, policy, products, rules
 from .slots.registry import schema_for
 
 app = FastAPI(title="Mock Core Banking API", version="0.1.0")
@@ -21,6 +22,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(banks.router)
+app.include_router(loan_types.router)
+app.include_router(products.router)
+app.include_router(documents.router)
+app.include_router(policy.router)
+app.include_router(rules.router)
 
 def product_to_dict(p: Product) -> dict:
     return {
@@ -40,14 +48,19 @@ def health():
 
 
 @app.get("/api/v1/loan-types")
-async def list_loan_types(session: AsyncSession = Depends(get_session)):
-    result = await session.execute(select(LoanType))
+async def list_loan_types(
+    bank_id: str = Query(default=DEFAULT_BANK_ID),
+    session: AsyncSession = Depends(get_session),
+):
+    result = await session.execute(select(LoanType).where(LoanType.bank_id == bank_id))
     loan_types = result.scalars().all()
 
     enriched = []
     for lt in loan_types:
         cat_result = await session.execute(
-            select(Category.code, Category.name).where(Category.loan_type_code == lt.code)
+            select(Category.code, Category.name).where(
+                Category.bank_id == bank_id, Category.loan_type_code == lt.code
+            )
         )
         categories = [{"code": row[0], "name": row[1]} for row in cat_result.all()]
         enriched.append({
@@ -61,9 +74,10 @@ async def list_loan_types(session: AsyncSession = Depends(get_session)):
 async def list_products(
     loan_type: str | None = Query(default=None),
     category: str | None = Query(default=None),
+    bank_id: str = Query(default=DEFAULT_BANK_ID),
     session: AsyncSession = Depends(get_session),
 ):
-    stmt = select(Product)
+    stmt = select(Product).where(Product.bank_id == bank_id)
     if loan_type:
         stmt = stmt.where(Product.loan_type_code == loan_type)
     if category:
@@ -84,9 +98,13 @@ async def list_products(
 
 
 @app.get("/api/v1/products/{product_code}")
-async def get_product(product_code: str, session: AsyncSession = Depends(get_session)):
+async def get_product(
+    product_code: str,
+    bank_id: str = Query(default=DEFAULT_BANK_ID),
+    session: AsyncSession = Depends(get_session),
+):
     result = await session.execute(
-        select(Product).where(Product.product_code.ilike(product_code))
+        select(Product).where(Product.bank_id == bank_id, Product.product_code.ilike(product_code))
     )
     p = result.scalar_one_or_none()
     if p is None:
@@ -95,9 +113,13 @@ async def get_product(product_code: str, session: AsyncSession = Depends(get_ses
 
 
 @app.get("/api/v1/products/{product_code}/requirements")
-async def get_product_requirements(product_code: str, session: AsyncSession = Depends(get_session)):
+async def get_product_requirements(
+    product_code: str,
+    bank_id: str = Query(default=DEFAULT_BANK_ID),
+    session: AsyncSession = Depends(get_session),
+):
     result = await session.execute(
-        select(Product).where(Product.product_code.ilike(product_code))
+        select(Product).where(Product.bank_id == bank_id, Product.product_code.ilike(product_code))
     )
     p = result.scalar_one_or_none()
     if p is None:
@@ -108,68 +130,22 @@ async def get_product_requirements(product_code: str, session: AsyncSession = De
     return schema
 
 
-class ProductIn(BaseModel):
-    product_code: str
-    name: str
-    loan_type: str
-    category: str
-    secured: bool = False
-    min_amount: int
-    max_amount: int
-    min_term_months: int
-    max_term_months: int
-    interest_rate: float
-    comparison_rate: float
-    rate_type: str
-    establishment_fee: int
-    max_lvr: int | None = None
-    features: list[str] = []
-
-
-@app.post("/api/v1/products", status_code=201)
-async def create_product(payload: ProductIn, session: AsyncSession = Depends(get_session)):
-    lt = await session.get(LoanType, payload.loan_type)
-    if lt is None:
-        raise HTTPException(400, f"Unknown loan_type '{payload.loan_type}'")
-
-    cat_result = await session.execute(
-        select(Category).where(
-            Category.loan_type_code == payload.loan_type,
-            Category.code == payload.category,
-        )
-    )
-    if cat_result.scalar_one_or_none() is None:
-        raise HTTPException(
-            400,
-            f"'{payload.category}' is not a valid category for loan_type '{payload.loan_type}'"
-        )
-
-    existing = await session.get(Product, payload.product_code)
-    if existing is not None:
-        raise HTTPException(409, f"Product '{payload.product_code}' already exists")
-
-    p = Product(
-        product_code=payload.product_code, name=payload.name,
-        loan_type_code=payload.loan_type, category_code=payload.category,
-        secured=payload.secured, min_amount=payload.min_amount, max_amount=payload.max_amount,
-        min_term_months=payload.min_term_months, max_term_months=payload.max_term_months,
-        interest_rate=payload.interest_rate, comparison_rate=payload.comparison_rate,
-        rate_type=payload.rate_type, establishment_fee=payload.establishment_fee,
-        max_lvr=payload.max_lvr, features=payload.features,
-    )
-    session.add(p)
-    await session.commit()
-    return product_to_dict(p)
-
-
 @app.get("/api/v1/loan-types/{loan_type}/categories/{category}/document-requirements")
 async def get_document_requirements(
-    loan_type: str, category: str, session: AsyncSession = Depends(get_session)
+    loan_type: str,
+    category: str,
+    bank_id: str = Query(default=DEFAULT_BANK_ID),
+    session: AsyncSession = Depends(get_session),
 ):
     stmt = (
         select(DocumentType.code, DocumentType.name)
-        .join(DocumentRequirement, DocumentRequirement.document_type_code == DocumentType.code)
+        .join(
+            DocumentRequirement,
+            (DocumentRequirement.document_type_code == DocumentType.code)
+            & (DocumentRequirement.bank_id == DocumentType.bank_id),
+        )
         .where(
+            DocumentRequirement.bank_id == bank_id,
             DocumentRequirement.loan_type_code == loan_type,
             DocumentRequirement.category_code == category,
         )
@@ -186,8 +162,16 @@ async def get_document_requirements(
 
 
 @app.get("/api/v1/policy/{key}")
-async def get_policy(key: str, session: AsyncSession = Depends(get_session)):
-    stmt = select(PolicySetting).where(PolicySetting.key == key).order_by(PolicySetting.effective_from.desc())
+async def get_policy(
+    key: str,
+    bank_id: str = Query(default=DEFAULT_BANK_ID),
+    session: AsyncSession = Depends(get_session),
+):
+    stmt = (
+        select(PolicySetting)
+        .where(PolicySetting.bank_id == bank_id, PolicySetting.key == key)
+        .order_by(PolicySetting.effective_from.desc())
+    )
     result = await session.execute(stmt)
     setting = result.scalars().first()
     if setting is None:
@@ -195,10 +179,14 @@ async def get_policy(key: str, session: AsyncSession = Depends(get_session)):
     return {"key": setting.key, "version": setting.version, "document": setting.document}
 
 @app.get("/api/v1/rules")
-async def get_rules(framework: str | None = None, session: AsyncSession = Depends(get_session)):
-    stmt = select(Rule)
+async def get_rules(
+    framework: str | None = None,
+    bank_id: str = Query(default=DEFAULT_BANK_ID),
+    session: AsyncSession = Depends(get_session),
+):
+    stmt = select(Rule).where(Rule.bank_id == bank_id)
     if framework:
         stmt = stmt.where(Rule.framework == framework)
     result = await session.execute(stmt)
-    rules = result.scalars().all()
-    return {"rules": [{"rule_id": r.rule_id, "framework": r.framework, **r.document} for r in rules]}
+    rules_result = result.scalars().all()
+    return {"rules": [{"rule_id": r.rule_id, "framework": r.framework, **r.document} for r in rules_result]}

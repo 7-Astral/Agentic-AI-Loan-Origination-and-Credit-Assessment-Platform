@@ -16,7 +16,9 @@ class Document(Base):
     __tablename__ = "documents"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    session_id: Mapped[str] = mapped_column(String(64), index=True)
+    application_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("applications.id"), index=True
+    )
     verification_type: Mapped[str] = mapped_column(String(50))
     original_filename: Mapped[str] = mapped_column(String(255))
     storage_path: Mapped[str] = mapped_column(String(500))
@@ -43,7 +45,9 @@ class VerificationResult(Base):
     __tablename__ = "verification_results"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    session_id: Mapped[str] = mapped_column(String(64), index=True)
+    application_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("applications.id"), index=True
+    )
     slot_id: Mapped[str] = mapped_column(String(100))
     document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id"))
     declared_value: Mapped[str] = mapped_column(String(500), default="")

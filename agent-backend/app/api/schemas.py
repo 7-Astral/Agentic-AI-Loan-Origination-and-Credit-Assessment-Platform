@@ -53,3 +53,15 @@ class TurnResponse(BaseModel):
     complete: bool
     escalated: bool = False
     product_code: str | None = None
+
+
+class DecisionRequest(BaseModel):
+    outcome: str = Field(pattern="^(approved|declined|refer_to_underwriter|withdrawn)$")
+    reasoning: str = ""
+
+
+class DecisionResponse(BaseModel):
+    session_id: str
+    outcome: str
+    reasoning: str
+    status: str

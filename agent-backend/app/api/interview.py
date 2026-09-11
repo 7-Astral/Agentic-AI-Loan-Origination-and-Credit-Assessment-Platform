@@ -14,6 +14,13 @@ from app.api.schemas import (
     TurnResponse,
 )
 from app.services.core_banking import core_banking
+from app.services.operational import (
+    ensure_application,
+    get_bank_id,
+    mirror_transcript,
+    mirror_turn,
+    set_application_product,
+)
 
 router = APIRouter(prefix="/api/v1/applications", tags=["interview"])
 
@@ -52,9 +59,9 @@ async def _resolve_stage(request: Request, session_id: str) -> str | None:
     return None
 
 
-async def _load_schema(product_code: str) -> dict:
+async def _load_schema(product_code: str, bank_id: str) -> dict:
     try:
-        return await core_banking.get_product_requirements(product_code)
+        return await core_banking.get_product_requirements(product_code, bank_id=bank_id)
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code == 404:
             raise HTTPException(404, f"Unknown product '{product_code}'")
@@ -65,7 +72,9 @@ async def _load_schema(product_code: str) -> dict:
 
 async def _start_interview(request: Request, session_id: str, product_code: str) -> TurnResponse:
     interview_graph = request.app.state.interview_graph
-    schema = await _load_schema(product_code)
+    bank_id = await get_bank_id(session_id)
+    schema = await _load_schema(product_code, bank_id)
+    await set_application_product(session_id, product_code)
 
     result = await interview_graph.ainvoke(
         {
@@ -86,6 +95,8 @@ async def _interview_turn(request: Request, session_id: str, result: dict) -> Tu
     payload = _interrupt_payload(result)
     complete = payload is None
 
+    await mirror_turn(session_id, values, complete)
+
     return TurnResponse(
         session_id=session_id,
         stage="complete" if complete else "interview",
@@ -104,9 +115,11 @@ async def _discovery_turn(request: Request, session_id: str, result: dict) -> Tu
     discovery_graph = request.app.state.discovery_graph
     payload = _interrupt_payload(result)
 
+    snapshot = await discovery_graph.aget_state(_discovery_config(session_id))
+    await mirror_transcript(session_id, snapshot.values.get("transcript") or [], snapshot.values.get("turn"))
+
     if payload is None:
         # Discovery finished — hand off to the interview.
-        snapshot = await discovery_graph.aget_state(_discovery_config(session_id))
         product_code = snapshot.values.get("product_code")
         if not product_code:
             raise HTTPException(500, "Discovery ended without a product")
@@ -123,12 +136,14 @@ async def _discovery_turn(request: Request, session_id: str, result: dict) -> Tu
 @router.post("", response_model=TurnResponse)
 async def start_application(request: Request, body: StartRequest) -> TurnResponse:
     session_id = str(uuid.uuid4())
+    await ensure_application(session_id)
 
     if body.product_code:
         return await _start_interview(request, session_id, body.product_code)
 
     discovery_graph = request.app.state.discovery_graph
-    result = await discovery_graph.ainvoke({"turn": 0}, _discovery_config(session_id))
+    bank_id = await get_bank_id(session_id)
+    result = await discovery_graph.ainvoke({"turn": 0, "bank_id": bank_id}, _discovery_config(session_id))
     return await _discovery_turn(request, session_id, result)
 
 

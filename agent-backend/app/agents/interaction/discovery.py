@@ -8,7 +8,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
 from app.core.llm import as_text, get_llm
-from app.services.core_banking import core_banking
+from app.services.core_banking import DEFAULT_BANK_ID, core_banking
 
 CLASSIFY_TYPE_SYSTEM = """You work out what kind of loan an Australian applicant needs
 from what they say.
@@ -74,6 +74,7 @@ def _append(left: list | None, right: list | None) -> list:
 
 
 class DiscoveryState(TypedDict, total=False):
+    bank_id: str
     transcript: Annotated[list[dict], _append]
     loan_types: list[dict]
     loan_type: str | None
@@ -111,6 +112,10 @@ def _product_brief(p: dict) -> dict:
     }
 
 
+def _bank_id(state: DiscoveryState) -> str:
+    return state.get("bank_id") or DEFAULT_BANK_ID
+
+
 def _lt_entry(state: DiscoveryState) -> dict:
     loan_type = state.get("loan_type")
     return next((t for t in state.get("loan_types") or [] if t["code"] == loan_type), {})
@@ -133,7 +138,7 @@ async def greet_node(state: DiscoveryState) -> dict:
 
 async def classify_type_node(state: DiscoveryState) -> dict:
     reply = state["transcript"][-1]["content"]
-    loan_types = state.get("loan_types") or await core_banking.list_loan_types()
+    loan_types = state.get("loan_types") or await core_banking.list_loan_types(bank_id=_bank_id(state))
 
     llm = get_llm("interaction")
     resp = await llm.ainvoke([
@@ -164,7 +169,7 @@ async def classify_type_node(state: DiscoveryState) -> dict:
 async def clarify_type_node(state: DiscoveryState) -> dict:
     turn = state.get("turn", 0) + 1
     answer = (state.get("pending_answer") or "").strip()
-    loan_types = state.get("loan_types") or await core_banking.list_loan_types()
+    loan_types = state.get("loan_types") or await core_banking.list_loan_types(bank_id=_bank_id(state))
     names = ", ".join(t["name"].lower() for t in loan_types)
     prompt = f"Is this for {names}, or something else?"
     if answer and not answer.rstrip().endswith("?"):
@@ -246,8 +251,9 @@ async def present_node(state: DiscoveryState) -> dict:
     turn = state.get("turn", 0) + 1
     preamble = ""
 
+    bank_id = _bank_id(state)
     try:
-        products = await core_banking.list_products(loan_type, category)
+        products = await core_banking.list_products(loan_type, category, bank_id=bank_id)
     except httpx.HTTPStatusError as e:
         if e.response.status_code != 404:
             raise
@@ -255,7 +261,7 @@ async def present_node(state: DiscoveryState) -> dict:
             "We don't currently offer that specific option. "
             "Here's what we do have for this loan type instead:\n\n"
         )
-        products = await core_banking.list_products(loan_type)
+        products = await core_banking.list_products(loan_type, bank_id=bank_id)
 
     llm = get_llm("interaction")
     resp = await llm.ainvoke([

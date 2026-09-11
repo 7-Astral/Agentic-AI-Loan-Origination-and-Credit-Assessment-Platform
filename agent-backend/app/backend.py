@@ -16,8 +16,10 @@ from app.api.interview import router as interview_router
 from app.core.config import get_settings
 from app.services.core_banking import core_banking
 from app.api.documents import router as documents_router
-from app.core.db import Base, engine
-from app.models.documents import Document, DocumentExtraction, VerificationResult 
+from app.api.decisions import router as decisions_router
+from app.models.documents import Document, DocumentExtraction, VerificationResult
+from app.models.application import Application, ApplicationSlot, AssessmentResult, Decision, Message
+from app.models.identity import User
 from app.api.assessment import router as assessment_router
 
 settings = get_settings()
@@ -25,9 +27,6 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
     async with AsyncPostgresSaver.from_conn_string(settings.langgraph_db_url) as checkpointer:
         await checkpointer.setup()
         app.state.discovery_graph = build_discovery_graph(checkpointer)
@@ -53,6 +52,7 @@ app.add_middleware(
 app.include_router(interview_router)
 app.include_router(documents_router)
 app.include_router(assessment_router)
+app.include_router(decisions_router)
 
 @app.get("/health")
 def health():

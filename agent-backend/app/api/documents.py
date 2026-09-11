@@ -9,6 +9,7 @@ from app.api.interview import _interview_config, _resolve_stage
 from app.core.db import get_session
 from app.models.documents import Document
 from app.services.core_banking import core_banking
+from app.services.operational import get_bank_id
 from app.services.storage import storage
 from app.agents.document.extractor import extract as extract_document
 from app.models.documents import Document, DocumentExtraction
@@ -37,15 +38,19 @@ async def list_required_documents(
     request: Request, session_id: str, db: AsyncSession = Depends(get_session)
 ):
     product_code = await _get_product_code(request, session_id)
-    product = await core_banking.get_product(product_code)
+    bank_id = await get_bank_id(session_id)
+    product = await core_banking.get_product(product_code, bank_id=bank_id)
     requirements = await core_banking.get_document_requirements(
-        product["loan_type"], product["category"]
+        product["loan_type"], product["category"], bank_id=bank_id
     )
 
-    result = await db.execute(select(Document).where(Document.session_id == session_id))
+    application_id = uuid.UUID(session_id)
+    result = await db.execute(select(Document).where(Document.application_id == application_id))
     uploaded = {d.verification_type: d for d in result.scalars().all()}
 
-    vr_result = await db.execute(select(VerificationResult).where(VerificationResult.session_id == session_id))
+    vr_result = await db.execute(
+        select(VerificationResult).where(VerificationResult.application_id == application_id)
+    )
     verifications_by_doc: dict = {}
     for vr in vr_result.scalars().all():
         verifications_by_doc.setdefault(str(vr.document_id), []).append(vr.status)
@@ -73,9 +78,10 @@ async def upload_document(
     db: AsyncSession = Depends(get_session),
 ):
     product_code = await _get_product_code(request, session_id)
-    product = await core_banking.get_product(product_code)
+    bank_id = await get_bank_id(session_id)
+    product = await core_banking.get_product(product_code, bank_id=bank_id)
     requirements = await core_banking.get_document_requirements(
-        product["loan_type"], product["category"]
+        product["loan_type"], product["category"], bank_id=bank_id
     )
     valid_types = {d["code"] for d in requirements["documents"]}
     if verification_type not in valid_types:
@@ -95,7 +101,7 @@ async def upload_document(
 
     document = Document(
         id=uuid.uuid4(),
-        session_id=session_id,
+        application_id=uuid.UUID(session_id),
         verification_type=verification_type,
         original_filename=file.filename or "upload",
         storage_path=storage_path,
@@ -127,7 +133,7 @@ async def upload_document(
         verification_results = reconcile(verification_type, result["fields"], filled)
         for vr in verification_results:
             db.add(VerificationResult(
-                session_id=session_id,
+                application_id=uuid.UUID(session_id),
                 slot_id=vr["slot_id"],
                 document_id=document.id,
                 declared_value=vr["declared_value"],

@@ -1,0 +1,19 @@
+# Import every model so Base.metadata (and therefore Alembic autogenerate) sees them.
+from app.models.bank import Bank  # noqa
+from app.models.bank_position import BankPosition  # noqa
+from app.models.user import User  # noqa
+from app.models.loan_product import LoanProduct  # noqa
+from app.models.lending_policy import LendingPolicy  # noqa
+from app.models.applicant_profile import ApplicantProfile  # noqa
+from app.models.loan_application import LoanApplication  # noqa
+from app.models.document import Document  # noqa
+from app.models.agent_conversation import AgentConversation  # noqa
+from app.models.agent_message import AgentMessage  # noqa
+from app.models.credit_assessment import CreditAssessment  # noqa
+from app.models.loan_decision import LoanDecision  # noqa
+from app.models.escalation import Escalation  # noqa
+from app.models.ai_configuration import AIConfiguration  # noqa
+from app.models.integration import Integration  # noqa
+from app.models.audit_log import AuditLog  # noqa
+from app.models.token_blacklist import TokenBlacklist  # noqa
+from app.models.notification import Notification  # noqa

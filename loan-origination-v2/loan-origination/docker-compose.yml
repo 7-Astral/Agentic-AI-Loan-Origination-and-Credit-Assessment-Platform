@@ -1,0 +1,83 @@
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: loan_origination
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  api:
+    build: ./services/api
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/loan_origination
+      JWT_SECRET: dev-secret-change-me
+      JWT_ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: "60"
+      # Inside the Docker network, agent-backend is reached by service name
+      # on its internal port (8000), not the host-mapped 8001 — used by the
+      # staff "view chat report" proxy (GET /bank/loan-applications/{id}/chat-report).
+      AGENT_BACKEND_BASE_URL: http://agent-backend:8000
+    depends_on:
+      - db
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./services/api:/app
+
+  mock-core-banking:
+    build:
+      context: ./services/agent-backend
+      dockerfile: mock_core_banking/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/loan_origination
+    depends_on:
+      - db
+    ports:
+      - "9000:9000"
+
+  agent-backend:
+    build:
+      context: ./services/agent-backend
+      dockerfile: app/Dockerfile
+    env_file:
+      - ./services/agent-backend/.env
+    environment:
+      # Override the .env's localhost/127.0.0.1 addresses — inside the
+      # Docker network, services reach each other by service name.
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/loan_origination
+      LANGGRAPH_DB_URL: postgresql://postgres:postgres@db:5432/loan_origination
+      APP_DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/loan_origination
+      CORE_BANKING_BASE_URL: http://mock-core-banking:9000
+      CATALOG_BASE_URL: http://api:8000
+      # Blank so it falls back to resolving by bank code (FNB001) instead
+      # of the .env's stale hardcoded id — see CatalogClient._default_bank_id_async.
+      PLATFORM_BANK_ID: ""
+    depends_on:
+      - db
+      - api
+      - mock-core-banking
+    ports:
+      - "8001:8000"
+
+  web:
+    build: ./apps/web
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_AGENT_API_URL: http://localhost:8001
+    depends_on:
+      - api
+      - agent-backend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./apps/web:/app
+      - /app/node_modules
+      - /app/.next
+
+volumes:
+  pgdata:

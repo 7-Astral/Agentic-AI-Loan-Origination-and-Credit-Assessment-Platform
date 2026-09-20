@@ -1,9 +1,3 @@
-"""Core slot definitions — asked for every product.
-
-Phases 4-7 and product overlays are added in the next slice.
-"""
-
-
 def slot(
     slot_id,
     label,
@@ -20,12 +14,6 @@ def slot(
     regulatory_basis=None,
     group=None,
 ):
-    """Build one slot definition.
-
-    required_when is a Python expression evaluated against filled slots.
-    None means always required (when `required` is True).
-    sources is the fill-order preference, cheapest first.
-    """
     return {
         "id": slot_id,
         "label": label,
@@ -45,7 +33,14 @@ def slot(
 
 EMPLOYED = "employment_status in ('full_time', 'part_time', 'casual')"
 
-# Phase 2 — requirements and objectives
+INDUSTRY_OPTIONS = [
+    "agriculture_forestry_fishing", "mining", "manufacturing", "utilities", "construction",
+    "wholesale_trade", "retail_trade", "accommodation_food", "transport_postal_warehousing",
+    "information_media_telecom", "finance_insurance", "property_rental",
+    "professional_scientific_technical", "administrative_support", "public_administration_safety",
+    "education_training", "health_care_social_assistance", "arts_recreation", "other_services",
+]
+
 PHASE_2 = [
     slot(
         "loan_amount", "Amount to borrow", 2, "currency",
@@ -94,7 +89,6 @@ PHASE_2 = [
     ),
 ]
 
-# Phase 1 — identity and household
 PHASE_1 = [
     slot(
         "full_name", "Full legal name", 1, "text",
@@ -130,6 +124,13 @@ PHASE_1 = [
         "visa_subclass", "Visa subclass", 1, "text",
         "Only when on a temporary visa",
         required_when="residency_status == 'temporary_visa'",
+        group="identity",
+    ),
+    slot(
+        "visa_expiry_date", "Visa expiry date", 1, "date",
+        "Only when on a temporary visa; used to check the visa lasts as long as the loan",
+        required_when="residency_status == 'temporary_visa'",
+        regulatory_basis="Lending policy eligibility",
         group="identity",
     ),
     slot(
@@ -179,7 +180,7 @@ PHASE_1 = [
     ),
 ]
 
-# Phase 3 — employment and income
+# Phase 3  employment and income
 PHASE_3 = [
     slot(
         "employment_status", "Employment status", 3, "choice",
@@ -203,6 +204,15 @@ PHASE_3 = [
         "Their role",
         required_when=EMPLOYED,
         sources=("extracted", "ask"),
+        group="employment",
+    ),
+    slot(
+        "employer_industry", "Industry of employer or business", 3, "choice",
+        "The closest industry to where they work; some industries carry tighter policy",
+        options=INDUSTRY_OPTIONS,
+        required_when=f"{EMPLOYED} or employment_status == 'self_employed'",
+        sources=("extracted", "ask"),
+        regulatory_basis="Income stability assessment",
         group="employment",
     ),
     slot(

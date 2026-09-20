@@ -4,15 +4,20 @@ from typing import Any
 
 from app.agents.assessment.metric import Channel, Metric, MetricState
 from app.agents.assessment.retail import bank_analysis
-FREQUENCY_PER_YEAR = {"weekly": 52, "fortnightly": 26, "monthly": 12}
+FREQUENCY_PER_YEAR = {"weekly": 52, "fortnightly": 26, "monthly": 12, "annually": 1}
 
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
-
-
+   
+   
 def _computed(value, channel: Channel, **kwargs) -> Metric:
     return Metric(value=value, state=MetricState.COMPUTED, channel=channel, computed_at=_now(), **kwargs)
+
+
+def _shading_rate(employment_status: str, shading_rates: dict) -> Decimal:
+    rate = shading_rates.get(employment_status, shading_rates.get(f"{employment_status}_employed", 1.0))
+    return Decimal(str(rate))
 
 
 def gross_annual_income(filled: dict[str, Any]) -> Metric[Decimal]:
@@ -26,7 +31,7 @@ def shaded_income(gross: Metric[Decimal], employment_status: str | None, shading
     if not gross.usable or employment_status is None:
         return Metric(value=None, state=MetricState.UNAVAILABLE, channel=Channel.DERIVED)
 
-    rate = Decimal(str(shading_rates.get(employment_status, 1.0)))
+    rate = _shading_rate(employment_status, shading_rates)
     value = (gross.value * rate).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
     return _computed(value, Channel.DERIVED, unit="AUD/year", inputs={
         "gross_annual_income": float(gross.value), "employment_status": employment_status, "shading_rate": float(rate),
@@ -43,6 +48,27 @@ def net_monthly_income(filled: dict[str, Any]) -> Metric[Decimal]:
     value = (per_year / 12).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     return _computed(value, Channel.DECLARATION, unit="AUD/month", inputs={
         "amount": amount, "frequency": frequency,
+    })
+
+
+def assessed_net_income(net: Metric[Decimal], employment_status: str | None, shading_rates: dict) -> Metric[Decimal]:
+    if not net.usable or employment_status is None:
+        return Metric(value=None, state=MetricState.UNAVAILABLE, channel=Channel.DERIVED)
+
+    rate = _shading_rate(employment_status, shading_rates)
+    value = (net.value * rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return _computed(value, Channel.DERIVED, unit="AUD/month", inputs={
+        "net_monthly_income": float(net.value), "employment_status": employment_status, "shading_rate": float(rate),
+    })
+
+
+def net_to_gross_ratio(gross: Metric[Decimal], net: Metric[Decimal]) -> Metric[Decimal]:
+    if not gross.usable or not net.usable or gross.value == 0:
+        return Metric(value=None, state=MetricState.UNAVAILABLE, channel=Channel.DERIVED)
+
+    value = (net.value * 12 / gross.value).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+    return _computed(value, Channel.DERIVED, unit="ratio", inputs={
+        "net_annual": float(net.value * 12), "gross_annual": float(gross.value),
     })
 
 
@@ -133,7 +159,7 @@ def monthly_surplus(
     if not all(m.usable for m in inputs):
         return Metric(value=None, state=MetricState.UNAVAILABLE, channel=Channel.DERIVED)
 
-    monthly_income = income.value / 12
+    monthly_income = income.value
     value = (monthly_income - expenses.value - commitments.value - repayment.value).quantize(
         Decimal("0.01"), rounding=ROUND_HALF_UP
     )
@@ -185,7 +211,9 @@ def assess_capacity(filled: dict[str, Any], product: dict, policy: dict, bank_tr
     commitments = existing_commitments(filled)
     rate = assessment_rate(product["interest_rate"], policy["assessment_rate_buffer"]["buffer_pct"])
     repayment = proposed_repayment(filled.get("loan_amount"), filled.get("loan_term_months"), rate)
-    surplus = monthly_surplus(shaded, assessed_expenses, commitments, repayment)
+    assessed_net = assessed_net_income(net_income, filled.get("employment_status"), policy["shading_rates"])
+    ratio = net_to_gross_ratio(gross, net_income)
+    surplus = monthly_surplus(assessed_net, assessed_expenses, commitments, repayment)
     nsr_result = nsr(surplus, repayment)
     dti_result = dti(shaded, commitments, repayment)
     dsr_result = dsr(shaded, commitments, repayment)
@@ -194,6 +222,8 @@ def assess_capacity(filled: dict[str, Any], product: dict, policy: dict, bank_tr
         "gross_annual_income": gross,
         "shaded_income": shaded,
         "net_monthly_income": net_income,
+        "assessed_net_income": assessed_net,
+        "net_to_gross_ratio": ratio,
         "declared_expenses": declared,
         "verified_expenses": verified,
         "hem_benchmark": hem,

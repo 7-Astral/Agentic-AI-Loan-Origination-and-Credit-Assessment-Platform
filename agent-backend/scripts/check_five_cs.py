@@ -31,7 +31,7 @@ async def main():
     metrics.update(assess_capacity(filled, product, policy))
     metrics.update(assess_conditions(filled, product, policy))
     metrics.update(assess_character(filled))
-    metrics.update(assess_capital(filled))
+    metrics.update(assess_capital(filled, product))
     metrics.update(assess_collateral(filled))
 
     for name, metric in metrics.items():

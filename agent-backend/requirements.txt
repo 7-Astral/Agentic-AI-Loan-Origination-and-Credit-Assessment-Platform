@@ -18,3 +18,4 @@ langgraph-checkpoint-postgres
 psycopg[binary,pool]
 python-multipart
 simpleeval
+pdfplumber

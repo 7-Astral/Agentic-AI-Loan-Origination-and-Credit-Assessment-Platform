@@ -133,13 +133,41 @@ DOCUMENT_REQUIREMENTS = [
 
 from datetime import date
 
+CONDITIONS_POLICY = {
+    "excluded_purposes": {"personal": ["business_use"], "home": [], "business": []},
+    "expected_purposes": {
+        "vehicle": ["purchase_vehicle"],
+        "owner_occupied": ["purchase_property", "home_improvement", "debt_consolidation"],
+        "investment": ["purchase_property"],
+    },
+    "max_age_at_maturity": 70,
+    "income_shock_pct": 10,
+    "max_balloon_pct": 30,
+    "vehicle_age_limits": {
+        "VL-NEW-020": {"basis": "at_application", "max_years": 3},
+        "VL-USED-021": {"basis": "at_end_of_term", "max_years": 12},
+    },
+    "min_tenure_months": {"full_time": 3, "part_time": 6, "casual": 12, "self_employed": 24},
+    "ineligible_employment": ["unemployed", "student"],
+    "review_employment": ["retired"],
+    "industry_risk": {
+        "construction": "high", "accommodation_food": "high", "arts_recreation": "high",
+        "retail_trade": "medium", "agriculture_forestry_fishing": "medium", "mining": "medium",
+        "transport_postal_warehousing": "medium", "administrative_support": "medium",
+        "property_rental": "medium", "wholesale_trade": "medium", "manufacturing": "medium",
+        "utilities": "low", "finance_insurance": "low", "information_media_telecom": "low",
+        "professional_scientific_technical": "low", "public_administration_safety": "low",
+        "education_training": "low", "health_care_social_assistance": "low", "other_services": "medium",
+    },
+}
+
 POLICY_SETTINGS = [
     {
         "key": "shading_rates", "version": "2026.09-v1",
         "effective_from": date(2026, 1, 1),
         "document": {
-            "full_time_employed": 1.0,
-            "part_time_employed": 1.0,
+            "full_time": 1.0,
+            "part_time": 1.0,
             "casual": 0.8,
             "self_employed": 0.8,
         },
@@ -160,6 +188,11 @@ POLICY_SETTINGS = [
         "key": "nsr_minimum", "version": "2026.09-v1",
         "effective_from": date(2026, 1, 1),
         "document": {"minimum": 1.0},
+    },
+    {
+        "key": "conditions", "version": "2026.09-v1",
+        "effective_from": date(2026, 1, 1),
+        "document": CONDITIONS_POLICY,
     },
 ]
 

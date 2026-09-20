@@ -5,6 +5,7 @@ import asyncio
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from app.agents.document.pdf_text import read_bank_statement_pdf
 from app.agents.document.schemas import EXTRACTION_SCHEMAS
 from app.core.llm import as_text, get_llm
 
@@ -47,6 +48,17 @@ async def extract(verification_type: str, content: bytes, content_type: str) -> 
     if not fields:
         return {"matches_claimed_type": False, "fields": {}, "notes": f"Unknown document type '{verification_type}'"}
 
+    # A digital bank statement PDF is read straight from its text, and only trusted if every row
+    # reconciles to the running balance. Anything else goes to the AI as before.
+    if verification_type == "bank_statements":
+        direct = await asyncio.to_thread(read_bank_statement_pdf, content)
+        if direct is not None:
+            return {
+                "matches_claimed_type": True, "fields": direct["fields"], "notes": "",
+                "method": "pdf_text", "checks": direct["checks"],
+                "boxes": direct["boxes"], "pages": direct["pages"],
+            }
+
     b64 = base64.b64encode(content).decode("utf-8")
     data_url = f"data:{content_type};base64,{b64}"
 
@@ -71,17 +83,18 @@ async def extract(verification_type: str, content: bytes, content_type: str) -> 
                 await asyncio.sleep(2 ** attempt)
     else:
         return {
-            "matches_claimed_type": False, "fields": {},
+            "matches_claimed_type": False, "fields": {}, "method": "ai_vision",
             "notes": f"Extraction service unavailable after retries: {last_error}",
         }
 
     try:
         parsed = _parse(as_text(resp))
     except (json.JSONDecodeError, IndexError):
-        return {"matches_claimed_type": False, "fields": {}, "notes": "extraction failed to parse"}
+        return {"matches_claimed_type": False, "fields": {}, "method": "ai_vision", "notes": "extraction failed to parse"}
 
     return {
         "matches_claimed_type": bool(parsed.get("matches_claimed_type", False)),
         "fields": parsed.get("fields") or {},
         "notes": parsed.get("notes") or "",
+        "method": "ai_vision",
     }

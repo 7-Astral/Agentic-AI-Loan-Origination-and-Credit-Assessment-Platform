@@ -1,0 +1,163 @@
+{
+  "recorded_at": "2026-09-21T05:21:04.559874+00:00",
+  "model": "gemini-3.5-flash-lite",
+  "result": {
+    "matches_claimed_type": true,
+    "fields": {
+      "account_holder_name": "Jane Citizen",
+      "statement_period_start": "2026-08-18",
+      "statement_period_end": "2026-09-17",
+      "closing_balance": 37426.91,
+      "transactions": [
+        {
+          "date": "2026-08-19",
+          "description": "WOOLWORTHS METRO BRUNSWICK",
+          "amount": 87.45,
+          "direction": "debit",
+          "category": "exp_food_groceries"
+        },
+        {
+          "date": "2026-08-20",
+          "description": "RENT PORTER REALTY",
+          "amount": 1400.0,
+          "direction": "debit",
+          "category": "exp_rent_board"
+        },
+        {
+          "date": "2026-08-20",
+          "description": "SALARY HARBOURVIEW LOGISTICS",
+          "amount": 2450.0,
+          "direction": "credit",
+          "category": "income"
+        },
+        {
+          "date": "2026-08-22",
+          "description": "COLES EXPRESS 3056",
+          "amount": 54.2,
+          "direction": "debit",
+          "category": "exp_food_groceries"
+        },
+        {
+          "date": "2026-08-24",
+          "description": "FUEL SHELL COLES EXPRESS",
+          "amount": 76.1,
+          "direction": "debit",
+          "category": "exp_vehicle_transport"
+        },
+        {
+          "date": "2026-08-26",
+          "description": "EXAMPLE ENERGY DIRECT DEBIT",
+          "amount": 142.3,
+          "direction": "debit",
+          "category": "exp_other_housing"
+        },
+        {
+          "date": "2026-08-28",
+          "description": "VIVIDTEL MOBILE PLAN",
+          "amount": 65.0,
+          "direction": "debit",
+          "category": "exp_phone_internet_media"
+        },
+        {
+          "date": "2026-08-29",
+          "description": "WOOLWORTHS BRUNSWICK",
+          "amount": 123.8,
+          "direction": "debit",
+          "category": "exp_food_groceries"
+        },
+        {
+          "date": "2026-09-01",
+          "description": "CARE HEALTH FUND PREMIUM",
+          "amount": 180.0,
+          "direction": "debit",
+          "category": "exp_insurance"
+        },
+        {
+          "date": "2026-09-02",
+          "description": "TRANSFER FROM M CITIZEN GIFT",
+          "amount": 9000.0,
+          "direction": "credit",
+          "category": "other"
+        },
+        {
+          "date": "2026-09-03",
+          "description": "SALARY HARBOURVIEW LOGISTICS",
+          "amount": 2450.0,
+          "direction": "credit",
+          "category": "income"
+        },
+        {
+          "date": "2026-09-04",
+          "description": "MARIOS PIZZERIA BRUNSWICK",
+          "amount": 38.9,
+          "direction": "debit",
+          "category": "exp_food_groceries"
+        },
+        {
+          "date": "2026-09-05",
+          "description": "CITY GYM MEMBERSHIP",
+          "amount": 49.0,
+          "direction": "debit",
+          "category": "exp_recreation_holidays"
+        },
+        {
+          "date": "2026-09-07",
+          "description": "WOOLWORTHS BRUNSWICK",
+          "amount": 96.35,
+          "direction": "debit",
+          "category": "exp_food_groceries"
+        },
+        {
+          "date": "2026-09-09",
+          "description": "MYKI TOP UP",
+          "amount": 40.0,
+          "direction": "debit",
+          "category": "exp_vehicle_transport"
+        },
+        {
+          "date": "2026-09-10",
+          "description": "CHEMIST WAREHOUSE BRUNSWICK",
+          "amount": 34.5,
+          "direction": "debit",
+          "category": "exp_medical_health"
+        },
+        {
+          "date": "2026-09-11",
+          "description": "NETFLIX SUBSCRIPTION",
+          "amount": 16.99,
+          "direction": "debit",
+          "category": "exp_phone_internet_media"
+        },
+        {
+          "date": "2026-09-12",
+          "description": "COLES BRUNSWICK",
+          "amount": 71.05,
+          "direction": "debit",
+          "category": "exp_food_groceries"
+        },
+        {
+          "date": "2026-09-14",
+          "description": "KMART BRUNSWICK",
+          "amount": 68.0,
+          "direction": "debit",
+          "category": "exp_clothing_personal_care"
+        },
+        {
+          "date": "2026-09-15",
+          "description": "TRANSFER TO SAVINGS",
+          "amount": 500.0,
+          "direction": "debit",
+          "category": "transfer"
+        },
+        {
+          "date": "2026-09-17",
+          "description": "SALARY HARBOURVIEW LOGISTICS",
+          "amount": 2450.0,
+          "direction": "credit",
+          "category": "income"
+        }
+      ]
+    },
+    "notes": ""
+  }
+}

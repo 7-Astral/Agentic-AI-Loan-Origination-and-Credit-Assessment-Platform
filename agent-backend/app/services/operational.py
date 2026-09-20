@@ -125,6 +125,12 @@ async def mirror_turn(session_id: str, values: dict[str, Any], complete: bool) -
 async def record_assessment(session_id: str, product_code: str, result: dict[str, Any]) -> None:
     app_id = uuid.UUID(session_id)
     async with async_session() as db:
+        application = await db.get(Application, app_id)
+        if application is None:
+            application = Application(id=app_id, bank_id=DEFAULT_BANK_ID, status="discovery")
+            db.add(application)
+            await db.flush() 
+
         db.add(AssessmentResult(
             application_id=app_id,
             product_code=product_code,
@@ -134,11 +140,8 @@ async def record_assessment(session_id: str, product_code: str, result: dict[str
             rule_results=result.get("rule_results"),
             route=result.get("route"),
         ))
-        application = await db.get(Application, app_id)
-        if application is not None:
-            application.status = _advance(application.status, "assessment")
+        application.status = _advance(application.status, "assessment")
         await db.commit()
-
 
 async def record_decision(
     session_id: str, outcome: str, reasoning: str, decided_by: uuid.UUID | None = None

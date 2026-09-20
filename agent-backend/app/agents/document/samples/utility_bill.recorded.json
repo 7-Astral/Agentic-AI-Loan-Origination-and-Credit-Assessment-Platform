@@ -1,0 +1,13 @@
+{
+  "recorded_at": "2026-09-21T05:21:09.659555+00:00",
+  "model": "gemini-3.5-flash-lite",
+  "result": {
+    "matches_claimed_type": true,
+    "fields": {
+      "name_on_document": "Jane Citizen",
+      "address": "12 Wattle Street, Brunswick VIC 3056",
+      "document_date": "2026-09-05"
+    },
+    "notes": "Energy bill used as proof of address"
+  }
+}

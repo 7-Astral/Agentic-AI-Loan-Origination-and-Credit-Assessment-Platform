@@ -3,7 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.agents.document.reconcile import reconcile
+from app.agents.document.process import process_document
 from app.models.documents import Document, DocumentExtraction, VerificationResult
 from app.api.interview import _interview_config, _resolve_stage
 from app.core.db import get_session
@@ -11,9 +11,7 @@ from app.models.documents import Document
 from app.services.core_banking import core_banking
 from app.services.operational import get_bank_id
 from app.services.storage import storage
-from app.agents.document.extractor import extract as extract_document
 from app.models.documents import Document, DocumentExtraction
-from app.agents.document.categorize import categorize_transactions
 
 router = APIRouter(prefix="/api/v1/applications", tags=["documents"])
 
@@ -113,25 +111,20 @@ async def upload_document(
 
     await db.flush()
 
-    result = await extract_document(verification_type, content, content_type)
+    interview_graph = request.app.state.interview_graph
+    snapshot = await interview_graph.aget_state(_interview_config(session_id))
+    filled = snapshot.values.get("filled") or {}
+
+    result = await process_document(verification_type, content, content_type, filled)
 
     if result["matches_claimed_type"]:
         document.status = "extracted"
-        fields = result["fields"]
-        if verification_type == "bank_statements" and fields.get("transactions"):
-            fields["transactions"] = await categorize_transactions(fields["transactions"])
         db.add(DocumentExtraction(
             document_id=document.id,
             extracted_fields=result["fields"],
             notes=result["notes"],
         ))
-
-        interview_graph = request.app.state.interview_graph
-        snapshot = await interview_graph.aget_state(_interview_config(session_id))
-        filled = snapshot.values.get("filled") or {}
-
-        verification_results = reconcile(verification_type, result["fields"], filled)
-        for vr in verification_results:
+        for vr in result["verifications"]:
             db.add(VerificationResult(
                 application_id=uuid.UUID(session_id),
                 slot_id=vr["slot_id"],

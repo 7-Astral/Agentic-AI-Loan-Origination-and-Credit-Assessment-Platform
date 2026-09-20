@@ -1,4 +1,6 @@
 import type { ApplicationState, RequiredDocument, TurnResponse } from "@/lib/types/application.ts";
+import type { DocumentOptions, ExtractRequest, ExtractResponse } from "@/lib/types/documents";
+import type { AssessRequest, AssessResponse, PlaygroundOptions } from "@/lib/types/playground";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 
@@ -80,4 +82,74 @@ export async function uploadNextDocument(
     throw new Error(detail?.detail ?? `Upload failed (status ${response.status})`);
   }
   return response.json();
+}
+
+export async function getPlaygroundOptions(): Promise<PlaygroundOptions> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/playground/options`, { cache: "no-store" });
+  if (!response.ok) {
+    const detail = await response.json().catch(() => null);
+    throw new Error(detail?.detail ?? `Failed to load playground options (status ${response.status})`);
+  }
+  return response.json() as Promise<PlaygroundOptions>;
+}
+
+export async function runPlaygroundAssessment(
+  request: AssessRequest,
+  signal?: AbortSignal,
+): Promise<AssessResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/playground/assess`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+    signal,
+  });
+  if (!response.ok) {
+    const detail = await response.json().catch(() => null);
+    throw new Error(detail?.detail ?? `Assessment failed (status ${response.status})`);
+  }
+  return response.json() as Promise<AssessResponse>;
+}
+
+
+export async function getDocumentOptions(): Promise<DocumentOptions> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/playground/documents/options`, { cache: "no-store" });
+  if (!response.ok) {
+    const detail = await response.json().catch(() => null);
+    throw new Error(detail?.detail ?? `Failed to load document lab options (status ${response.status})`);
+  }
+  return response.json() as Promise<DocumentOptions>;
+}
+
+export function sampleDocumentUrl(sampleId: string): string {
+  return `${API_BASE_URL}/api/v1/playground/documents/samples/${sampleId}/file`;
+}
+
+export class ExtractionError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
+export async function extractDocument(request: ExtractRequest, signal?: AbortSignal): Promise<ExtractResponse> {
+  const form = new FormData();
+  form.append("verification_type", request.verificationType);
+  form.append("declared", JSON.stringify(request.declared));
+  form.append("live", String(request.live));
+  form.append("categorize", String(request.categorize ?? true));
+  if (request.sampleId) form.append("sample_id", request.sampleId);
+  if (request.file && !request.sampleId) form.append("file", request.file);
+
+  const response = await fetch(`${API_BASE_URL}/api/v1/playground/documents/extract`, {
+    method: "POST",
+    body: form,
+    signal,
+  });
+  if (!response.ok) {
+    const detail = await response.json().catch(() => null);
+    throw new ExtractionError(detail?.detail ?? `Extraction failed (status ${response.status})`, response.status);
+  }
+  return response.json() as Promise<ExtractResponse>;
 }

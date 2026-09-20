@@ -21,6 +21,8 @@ from app.models.documents import Document, DocumentExtraction, VerificationResul
 from app.models.application import Application, ApplicationSlot, AssessmentResult, Decision, Message
 from app.models.identity import User
 from app.api.assessment import router as assessment_router
+from app.api.playground import router as playground_router
+from app.api.playground_documents import router as playground_documents_router
 
 settings = get_settings()
 
@@ -53,6 +55,8 @@ app.include_router(interview_router)
 app.include_router(documents_router)
 app.include_router(assessment_router)
 app.include_router(decisions_router)
+app.include_router(playground_router)
+app.include_router(playground_documents_router)
 
 @app.get("/health")
 def health():

@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     core_banking_api_key: str = "mock-key"
     core_banking_timeout: int = 15
 
+    bureau_base_url: str = "http://127.0.0.1:9001"
+    bureau_api_key: str = "mock-bureau-key"
+    bureau_timeout: int = 15
+    bureau_mock_scenario: str = ""
+
     langgraph_db_url: str = "postgresql://postgres:admin@localhost:5432/loan_origination"
     app_database_url: str = "postgresql+asyncpg://postgres:admin@localhost:5432/loan_origination"    
 

@@ -49,6 +49,17 @@ services:
         condition: service_healthy
     command: uvicorn mock_core_banking.main:app --host 0.0.0.0 --port 9000 --reload
 
+  mock-bureau:
+    build:
+      context: ./agent-backend
+      dockerfile: mock_bureau/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "9200:9000"
+    volumes:
+      - ./agent-backend/mock_bureau:/app/mock_bureau
+    command: uvicorn mock_bureau.main:app --host 0.0.0.0 --port 9000 --reload
+
   backendapi:
     build:
       context: ./agent-backend
@@ -60,6 +71,7 @@ services:
       LANGGRAPH_DB_URL: postgresql://postgres:postgres@db:5432/loan_origination
       APP_DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/loan_origination
       CORE_BANKING_BASE_URL: http://mock-bank:9000
+      BUREAU_BASE_URL: http://mock-bureau:9000
     ports:
       - "8001:8000"
     volumes:
@@ -68,6 +80,8 @@ services:
       db:
         condition: service_healthy
       mock-bank:
+        condition: service_started
+      mock-bureau:
         condition: service_started
     command: uvicorn app.backend:app --host 0.0.0.0 --port 8000
   web:

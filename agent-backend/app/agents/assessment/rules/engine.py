@@ -1,16 +1,26 @@
+from decimal import Decimal
+
 from simpleeval import simple_eval
 
-from app.agents.assessment.metric import Metric
+from app.agents.assessment.metric import Metric, MetricState
 
 SEVERITY_ORDER = {"fail": 0, "flag": 1, "provisional": 2, "pass": 3}
 
 
+def _plain(value):
+    return float(value) if isinstance(value, Decimal) else value
+
+
 def evaluate(rules: list[dict], metrics: dict[str, Metric], framework: str) -> list[dict]:
     scope = {name: m.value for name, m in metrics.items() if m.usable}
+    not_applicable = {name for name, m in metrics.items() if m.state == MetricState.NOT_APPLICABLE}
 
     results = []
     for rule in rules:
         if rule["framework"] != framework:
+            continue
+
+        if any(r in not_applicable for r in rule["requires"]):
             continue
 
         missing = [r for r in rule["requires"] if r not in scope]
@@ -38,7 +48,7 @@ def evaluate(rules: list[dict], metrics: dict[str, Metric], framework: str) -> l
                 "rule_id": rule["rule_id"],
                 "status": rule["status"],
                 "message": rule.get("message", ""),
-                "inputs": {k: scope[k] for k in rule["requires"]},
+                "inputs": {k: _plain(scope[k]) for k in rule["requires"]},
             })
 
     return sorted(results, key=lambda r: SEVERITY_ORDER.get(r["status"], 99))

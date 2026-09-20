@@ -1,0 +1,16 @@
+{
+  "recorded_at": "2026-09-21T05:19:39.724202+00:00",
+  "model": "gemini-3.7-flash",
+  "result": {
+    "matches_claimed_type": true,
+    "fields": {
+      "employee_name": "Jane Citizen",
+      "employer_name": "Harbourview Logistics Pty Ltd",
+      "gross_pay_this_period": 3653.85,
+      "pay_period_start": "2026-08-31",
+      "pay_period_end": "2026-09-13",
+      "pay_frequency": "Fortnightly"
+    },
+    "notes": ""
+  }
+}

@@ -12,6 +12,14 @@ import type {
 
 export const MOCK_BANKS: AdminBank[] = [
   {
+    id: "default",
+    name: "Default Bank",
+    slug: "default",
+    primaryColor: "#334155",
+    status: "active",
+    createdAt: "2026-01-01",
+  },
+  {
     id: "mutual-community",
     name: "Mutual Community Bank",
     slug: "mutual-community",

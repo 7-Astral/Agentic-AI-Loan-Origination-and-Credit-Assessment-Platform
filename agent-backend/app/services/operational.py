@@ -1,16 +1,9 @@
-"""Mirrors LangGraph checkpoint state and assessment/decision events out into real,
-queryable SQL. The checkpoint stays the source of truth for discovery/interview control
-flow — this module only ever writes a read-model alongside it, never replaces it.
-
-Each function opens its own short-lived session (matching the existing style where
-`core_banking` is a fire-and-forget singleton, not DI-threaded) so callers in the API
-layer only need a one-line call, not a threaded `db` session.
-"""
 
 import uuid
 from typing import Any
 
 from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import async_session
 from app.models.application import (
@@ -22,6 +15,7 @@ from app.models.application import (
     Decision,
     Message,
 )
+from app.models.documents import Document, DocumentExtraction, VerificationResult
 
 OUTCOME_STATUS = {
     "approved": "approved",
@@ -122,6 +116,16 @@ async def mirror_turn(session_id: str, values: dict[str, Any], complete: bool) -
         await db.commit()
 
 
+async def get_latest_assessment(db: AsyncSession, application_id: uuid.UUID) -> AssessmentResult | None:
+    result = await db.execute(
+        select(AssessmentResult)
+        .where(AssessmentResult.application_id == application_id)
+        .order_by(AssessmentResult.created_at.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
 async def record_assessment(session_id: str, product_code: str, result: dict[str, Any]) -> None:
     app_id = uuid.UUID(session_id)
     async with async_session() as db:
@@ -131,6 +135,7 @@ async def record_assessment(session_id: str, product_code: str, result: dict[str
             db.add(application)
             await db.flush() 
 
+        score_report = result.get("score_report") or {}
         db.add(AssessmentResult(
             application_id=app_id,
             product_code=product_code,
@@ -139,9 +144,70 @@ async def record_assessment(session_id: str, product_code: str, result: dict[str
             metrics_total=result.get("metrics_total", 0),
             rule_results=result.get("rule_results"),
             route=result.get("route"),
+            group_scores=score_report.get("group_scores"),
+            overall_score=score_report.get("overall_score"),
+            weights_applied=score_report.get("weights_applied"),
+            score_bands_applied=score_report.get("score_bands_applied"),
+            tier=score_report.get("tier"),
+            data_completeness=score_report.get("data_completeness"),
+            conditions_of_approval=result.get("conditions_of_approval"),
+            narrative_summary=result.get("narrative_summary"),
+            narrative_summary_score=score_report.get("overall_score"),
         ))
         application.status = _advance(application.status, "assessment")
         await db.commit()
+
+async def get_filled_from_slots(db: AsyncSession, application_id: uuid.UUID) -> dict[str, Any]:
+    result = await db.execute(
+        select(ApplicationSlot).where(ApplicationSlot.application_id == application_id)
+    )
+    return {row.slot_key: row.value for row in result.scalars().all()}
+
+
+async def list_documents(db: AsyncSession, application_id: uuid.UUID) -> list[dict]:
+    result = await db.execute(
+        select(Document, DocumentExtraction)
+        .outerjoin(DocumentExtraction, DocumentExtraction.document_id == Document.id)
+        .where(Document.application_id == application_id)
+        .order_by(Document.uploaded_at)
+    )
+    return [
+        {
+            "document_id": str(doc.id),
+            "verification_type": doc.verification_type,
+            "original_filename": doc.original_filename,
+            "status": doc.status,
+            "uploaded_at": doc.uploaded_at,
+            "extracted": extraction is not None,
+        }
+        for doc, extraction in result.all()
+    ]
+
+
+async def list_verifications(db: AsyncSession, application_id: uuid.UUID) -> list[dict]:
+    result = await db.execute(
+        select(VerificationResult)
+        .where(VerificationResult.application_id == application_id)
+        .order_by(VerificationResult.checked_at)
+    )
+    return [
+        {
+            "slot_id": v.slot_id, "declared_value": v.declared_value, "extracted_value": v.extracted_value,
+            "status": v.status, "checked_at": v.checked_at,
+        }
+        for v in result.scalars().all()
+    ]
+
+
+async def list_transcript(db: AsyncSession, application_id: uuid.UUID) -> list[dict]:
+    result = await db.execute(
+        select(Message).where(Message.application_id == application_id).order_by(Message.id)
+    )
+    return [
+        {"role": m.role, "content": m.content, "turn": m.turn, "created_at": m.created_at}
+        for m in result.scalars().all()
+    ]
+
 
 async def record_decision(
     session_id: str, outcome: str, reasoning: str, decided_by: uuid.UUID | None = None

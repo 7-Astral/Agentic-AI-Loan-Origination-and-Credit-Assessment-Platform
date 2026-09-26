@@ -1,6 +1,7 @@
 import type { ApplicationState, RequiredDocument, TurnResponse } from "@/lib/types/application.ts";
 import type { DocumentOptions, ExtractRequest, ExtractResponse } from "@/lib/types/documents";
 import type { AssessRequest, AssessResponse, PlaygroundOptions } from "@/lib/types/playground";
+import type { ApplicationList, ApplicationReport } from "@/lib/types/report";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 
@@ -122,6 +123,30 @@ export async function getDocumentOptions(): Promise<DocumentOptions> {
 
 export function sampleDocumentUrl(sampleId: string): string {
   return `${API_BASE_URL}/api/v1/playground/documents/samples/${sampleId}/file`;
+}
+
+export async function listBankApplications(
+  bankId: string,
+  limit = 50,
+  offset = 0,
+): Promise<ApplicationList> {
+  const params = new URLSearchParams({ bank_id: bankId, limit: String(limit), offset: String(offset) });
+  const response = await fetch(`${API_BASE_URL}/api/v1/applications?${params}`, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`Failed to load applications (status ${response.status})`);
+  }
+  return response.json() as Promise<ApplicationList>;
+}
+
+export async function getApplicationReport(sessionId: string): Promise<ApplicationReport> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/applications/${sessionId}/report`, {
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    const detail = await response.json().catch(() => null);
+    throw new Error(detail?.detail ?? `Failed to load report (status ${response.status})`);
+  }
+  return response.json() as Promise<ApplicationReport>;
 }
 
 export class ExtractionError extends Error {

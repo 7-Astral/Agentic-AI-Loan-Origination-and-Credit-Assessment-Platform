@@ -5,6 +5,7 @@ import { notFound, usePathname, useRouter } from "next/navigation";
 import { type CSSProperties, type ReactNode } from "react";
 import {
   ArrowLeft,
+  ClipboardList,
   FileStack,
   LayoutDashboard,
   ListTree,
@@ -29,7 +30,10 @@ const NAV_ITEMS = [
   { href: "rules", label: "Rules", icon: Scale },
 ] as const;
 
-const MONITOR_ITEMS = [{ href: "audit", label: "Audit Log", icon: ScrollText }] as const;
+const MONITOR_ITEMS = [
+  { href: "applications", label: "Applications", icon: ClipboardList },
+  { href: "audit", label: "Audit Log", icon: ScrollText },
+] as const;
 
 export default function BankAdminLayout({
   children,

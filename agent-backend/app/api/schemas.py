@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -65,3 +66,147 @@ class DecisionResponse(BaseModel):
     outcome: str
     reasoning: str
     status: str
+
+
+class ScoredMetricOut(BaseModel):
+    metric: str
+    raw_value: Any = None
+    unit: str | None = None
+    channel: str | None = None
+    normalized_score: float
+
+
+class SkippedMetricOut(BaseModel):
+    metric: str
+    reason: str
+
+
+class GroupScoreOut(BaseModel):
+    score: float | None
+    state: str
+    metrics_used: list[ScoredMetricOut] = []
+    metrics_skipped: list[SkippedMetricOut] = []
+
+
+class ConditionOut(BaseModel):
+    id: str
+    category: str
+    text: str
+    reason: str
+    blocking: bool
+
+
+class RuleResultOut(BaseModel):
+    rule_id: str
+    status: str
+    message: str | None = None
+    missing: list[str] | None = None
+    detail: str | None = None
+    inputs: dict[str, Any] | None = None
+
+
+class RuleBasedIndicatorOut(BaseModel):
+    tier: str
+    fail_count: int
+    flag_count: int
+    provisional_count: int
+
+
+class ApplicantFactOut(BaseModel):
+    id: str
+    label: str
+    value: Any
+
+
+class KeyFigureOut(BaseModel):
+    metric: str
+    label: str
+    value: Any
+    unit: str | None = None
+
+
+class PolicyComparisonOut(BaseModel):
+    metric: str
+    label: str
+    value: Any
+    unit: str | None = None
+    threshold: Any
+    threshold_label: str
+    meets_threshold: bool
+
+
+class DocumentSummaryOut(BaseModel):
+    document_id: str
+    verification_type: str
+    original_filename: str
+    status: str
+    uploaded_at: datetime
+    extracted: bool
+
+
+class VerificationOut(BaseModel):
+    slot_id: str
+    declared_value: str
+    extracted_value: str
+    status: str
+    checked_at: datetime
+
+
+class TranscriptMessageOut(BaseModel):
+    role: str
+    content: str
+    turn: int | None = None
+    created_at: datetime
+
+
+class RiskFactorOut(BaseModel):
+    severity: str
+    label: str
+    detail: str
+
+
+class RiskProfileOut(BaseModel):
+    category: str
+    factors: list[RiskFactorOut] = []
+
+
+class ApplicationReportOut(BaseModel):
+    session_id: str
+    bank_id: str
+    product_code: str
+    product_name: str | None = None
+    status: str
+    generated_at: datetime
+    group_scores: dict[str, GroupScoreOut]
+    overall_score: float | None
+    weights_applied: dict[str, float]
+    score_bands_applied: dict[str, float]
+    tier: str
+    data_completeness: dict[str, str]
+    conditions_of_approval: list[ConditionOut]
+    rule_results: list[RuleResultOut]
+    rule_based_indicator: RuleBasedIndicatorOut
+    metrics_computed: int
+    metrics_total: int
+    narrative_summary: str
+    risk_profile: RiskProfileOut
+    applicant_summary: list[ApplicantFactOut] = []
+    key_figures: list[KeyFigureOut] = []
+    policy_comparison: list[PolicyComparisonOut] = []
+    documents: list[DocumentSummaryOut] = []
+    verifications: list[VerificationOut] = []
+    transcript: list[TranscriptMessageOut] = []
+
+
+class ApplicationSummaryOut(BaseModel):
+    session_id: str
+    product_code: str | None
+    status: str
+    overall_score: float | None
+    tier: str | None
+    created_at: datetime
+
+
+class ApplicationListOut(BaseModel):
+    applications: list[ApplicationSummaryOut]
+    total: int

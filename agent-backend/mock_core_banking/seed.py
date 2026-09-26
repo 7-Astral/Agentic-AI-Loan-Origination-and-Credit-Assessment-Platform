@@ -161,6 +161,41 @@ CONDITIONS_POLICY = {
     },
 }
 
+
+METRIC_WEIGHTS = {
+    "personal": {"capacity": 45, "character": 25, "capital": 10, "collateral": 0, "conditions": 20},
+    "home": {"capacity": 35, "character": 15, "capital": 25, "collateral": 20, "conditions": 5},
+    "business": {"capacity": 30, "character": 20, "capital": 15, "collateral": 20, "conditions": 15},
+}
+
+SCORE_BANDS = {"auto_eligible_min": 80, "underwriter_review_min": 60}
+
+METRIC_SCORING = {
+    "nsr": {"type": "linear_higher_better", "floor": 0, "cap": 3},
+    "dti": {"type": "linear_lower_better", "floor": 0, "cap": 8},
+    "dsr": {"type": "linear_lower_better", "floor": 0, "cap": 1.0},
+    "contribution_pct": {"type": "linear_higher_better", "floor": 0, "cap": 30},
+    "net_asset_position": {"type": "linear_higher_better", "floor": -50000, "cap": 100000},
+    "genuine_savings": {"type": "linear_higher_better", "floor": 0, "cap": 15000},
+    "credit_score": {"type": "linear_higher_better", "floor": 0, "cap": 1200},
+    "worst_rhi_24mo": {"type": "linear_lower_better", "floor": 0, "cap": 3},
+    "unpaid_defaults": {"type": "linear_lower_better", "floor": 0, "cap": 3},
+    "enquiry_velocity_6mo": {"type": "linear_lower_better", "floor": 0, "cap": 10},
+    "bankruptcy_judgment_status": {"type": "banded", "bands": [
+        {"equals": "none", "score": 100}, {"equals": "judgment", "score": 40}, {"score": 0},
+    ]},
+    "lvr": {"type": "linear_lower_better", "floor": 0, "cap": 110},
+    "stressed_nsr": {"type": "linear_higher_better", "floor": -1, "cap": 1.5},
+    "employment_stability": {"type": "banded", "bands": [
+        {"equals": "stable", "score": 100}, {"equals": "review", "score": 50},
+        {"equals": "ineligible", "score": 0}, {"score": 40},
+    ]},
+    "industry_sector_risk": {"type": "banded", "bands": [
+        {"equals": "low", "score": 100}, {"equals": "medium", "score": 60},
+        {"equals": "high", "score": 20}, {"score": 50},
+    ]},
+}
+
 POLICY_SETTINGS = [
     {
         "key": "shading_rates", "version": "2026.09-v1",
@@ -193,6 +228,21 @@ POLICY_SETTINGS = [
         "key": "conditions", "version": "2026.09-v1",
         "effective_from": date(2026, 1, 1),
         "document": CONDITIONS_POLICY,
+    },
+    {
+        "key": "metric_weights", "version": "2026.09-v1",
+        "effective_from": date(2026, 1, 1),
+        "document": METRIC_WEIGHTS,
+    },
+    {
+        "key": "score_bands", "version": "2026.09-v1",
+        "effective_from": date(2026, 1, 1),
+        "document": SCORE_BANDS,
+    },
+    {
+        "key": "metric_scoring", "version": "2026.09-v1",
+        "effective_from": date(2026, 1, 1),
+        "document": METRIC_SCORING,
     },
 ]
 

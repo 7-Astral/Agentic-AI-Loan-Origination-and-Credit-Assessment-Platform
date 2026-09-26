@@ -12,7 +12,6 @@ COLLATERAL_METRIC_NAMES = [
 
 
 def assess_collateral(filled: dict[str, Any]) -> dict[str, Metric]:
-    """Stubbed for v1 — see module docstring."""
     return {
         name: Metric(value=None, state=MetricState.UNAVAILABLE, channel=Channel.VALUATION)
         for name in COLLATERAL_METRIC_NAMES

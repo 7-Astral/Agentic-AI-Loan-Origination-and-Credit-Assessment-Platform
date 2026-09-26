@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -80,14 +80,20 @@ class AssessmentResult(Base):
     metrics_total: Mapped[int] = mapped_column(Integer)
     rule_results: Mapped[Any] = mapped_column(JSON)
     route: Mapped[Any] = mapped_column(JSON)
+    group_scores: Mapped[Any] = mapped_column(JSON, nullable=True)
+    overall_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    weights_applied: Mapped[Any] = mapped_column(JSON, nullable=True)
+    score_bands_applied: Mapped[Any] = mapped_column(JSON, nullable=True)
+    tier: Mapped[str | None] = mapped_column(String(30), nullable=True, index=True)
+    data_completeness: Mapped[Any] = mapped_column(JSON, nullable=True)
+    conditions_of_approval: Mapped[Any] = mapped_column(JSON, nullable=True)
+    narrative_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    narrative_summary_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
 class Decision(Base):
-    """Append-only. A decision is a fact (who/what/when); an AssessmentResult is a
-    computation that can be superseded by a re-run — these are deliberately separate
-    tables so an underwriter override is just a second row, not a schema change."""
-
+    
     __tablename__ = "decisions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

@@ -138,6 +138,17 @@ class FakeLLM:
         self.extract_responses: dict[str, dict] = {}
         self.ask_texts: dict[str, str] = {}
         self.default_ask_text = "Can you tell me more about that?"
+        # ai_review.py's assessment call is once-per-run, not per-slot, so a single
+        # overridable canned response is enough (unlike extract_responses/ask_texts,
+        # which are keyed by slot id because there are many of those per interview).
+        self.assessment_response: dict = {
+            "risk_score": 35,
+            "risk_band": "medium",
+            "recommendation": "underwriter_review",
+            "key_risk_factors": ["Fake LLM default response"],
+            "key_strengths": [],
+            "rationale": "Canned response from FakeLLM; not a real assessment.",
+        }
 
     async def ainvoke(self, messages):
         self.calls.append(messages)
@@ -157,6 +168,9 @@ class FakeLLM:
             slot_id = fields[0]["id"] if fields else None
             return _FakeMessage(self.ask_texts.get(slot_id, self.default_ask_text))
 
+        if "senior credit risk analyst" in system:
+            return _FakeMessage(json.dumps(self.assessment_response))
+
         if not self.discovery_queue:
             raise AssertionError(f"FakeLLM discovery_queue exhausted; next call was: {messages}")
         return _FakeMessage(self.discovery_queue.pop(0))
@@ -172,6 +186,7 @@ def fake_llm(monkeypatch):
     monkeypatch.setattr("app.agents.interaction.discovery.get_llm", _get_llm)
     monkeypatch.setattr("app.agents.interaction.extractor.get_llm", _get_llm)
     monkeypatch.setattr("app.agents.interaction.questioner.get_llm", _get_llm)
+    monkeypatch.setattr("app.agents.assessment.ai_review.get_llm", _get_llm)
     return llm
 
 

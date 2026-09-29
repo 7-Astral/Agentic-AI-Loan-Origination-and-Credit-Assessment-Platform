@@ -64,6 +64,7 @@ async def get_application_report(session_id: str, db: AsyncSession = Depends(get
             "metrics_total": latest_assessment.metrics_total,
             "rule_results": latest_assessment.rule_results,
             "route": latest_assessment.route,
+            "ai_assessment": latest_assessment.ai_assessment,
             "created_at": latest_assessment.created_at.isoformat(),
         }
         if latest_assessment

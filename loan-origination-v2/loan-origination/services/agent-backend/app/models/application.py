@@ -88,6 +88,10 @@ class AssessmentResult(Base):
     metrics_total: Mapped[int] = mapped_column(Integer)
     rule_results: Mapped[Any] = mapped_column(JSON)
     route: Mapped[Any] = mapped_column(JSON)
+    # The LLM's holistic final risk score/recommendation over the metrics and rule_results
+    # above (see app.agents.assessment.ai_review) — always computed after and never used to
+    # derive them. Nullable: a Gemini outage still lets the deterministic assessment persist.
+    ai_assessment: Mapped[Any] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 

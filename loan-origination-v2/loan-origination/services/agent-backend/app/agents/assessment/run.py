@@ -1,6 +1,7 @@
 import uuid
 from decimal import Decimal
 
+from app.agents.assessment.ai_review import review as ai_review
 from app.agents.assessment.retail.metrics.bureau_mock import mock_credit_score
 from app.agents.assessment.retail.metrics.capacity import assess_capacity
 from app.agents.assessment.retail.metrics.capital import assess_capital
@@ -76,17 +77,35 @@ async def run_retail_assessment(interview_graph, interview_config: dict, db: Asy
     route_result = route(rule_results)
     computed_count = sum(1 for m in metrics.values() if m.usable)
 
+    serialised_metrics = {
+        name: {"state": m.state.value, "value": _serialise(m.value), "unit": m.unit}
+        for name, m in metrics.items()
+    }
+
+    # Everything above is deterministic code — the rule engine and every metric value.
+    # Only now, with the findings already fixed, is the LLM asked for one holistic final
+    # risk score/recommendation over them (see ai_review.py's own docstring for why this
+    # order matters). Best-effort: a Gemini outage degrades ai_assessment to
+    # {"available": False, ...} rather than failing the assessment the deterministic
+    # engine already produced.
+    ai_assessment = await ai_review(
+        product_code=product_code,
+        loan_amount=_serialise(filled.get("loan_amount")),
+        loan_term_months=filled.get("loan_term_months"),
+        metrics=serialised_metrics,
+        rule_results=rule_results,
+        route_result=route_result,
+    )
+
     response = {
         "session_id": session_id,
         "product_code": product_code,
-        "metrics": {
-            name: {"state": m.state.value, "value": _serialise(m.value), "unit": m.unit}
-            for name, m in metrics.items()
-        },
+        "metrics": serialised_metrics,
         "metrics_computed": computed_count,
         "metrics_total": len(metrics),
         "rule_results": rule_results,
         "route": route_result,
+        "ai_assessment": ai_assessment,
     }
     await record_assessment(session_id, product_code, response)
     return response

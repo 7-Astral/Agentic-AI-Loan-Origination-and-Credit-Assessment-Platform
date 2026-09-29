@@ -174,6 +174,7 @@ async def record_assessment(session_id: str, product_code: str, result: dict[str
             metrics_total=result.get("metrics_total", 0),
             rule_results=result.get("rule_results"),
             route=result.get("route"),
+            ai_assessment=result.get("ai_assessment"),
         ))
         application = await db.get(Application, app_id)
         if application is not None:

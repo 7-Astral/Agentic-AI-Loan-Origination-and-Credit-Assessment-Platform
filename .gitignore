@@ -38,3 +38,6 @@ pnpm-debug.log*
 
 # Docker
 docker-compose.override.yml
+
+# Local Postgres data (if bind-mounted)
+pgdata/

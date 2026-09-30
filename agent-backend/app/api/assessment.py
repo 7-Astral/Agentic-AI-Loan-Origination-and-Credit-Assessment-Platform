@@ -12,6 +12,7 @@ from app.api.interview import _interview_config, _resolve_stage
 from app.api.schemas import ApplicationReportOut
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_session
+from app.core.service_auth import require_service_api_key
 from app.models.application import Application, AssessmentResult
 from app.services.core_banking import DEFAULT_BANK_ID, core_banking
 from app.services.operational import get_filled_from_slots
@@ -105,10 +106,24 @@ async def _latest_persisted_report(db: AsyncSession, session_id: str) -> Applica
     )
 
 
-@router.get("/{session_id}/report", response_model=ApplicationReportOut)
+# Server-to-server only: services/api proxies it to bank staff
+# (GET /bank/loan-applications/{id}/assessment-report) after checking the
+# application belongs to their bank.
+@router.get(
+    "/{session_id}/report",
+    response_model=ApplicationReportOut,
+    dependencies=[Depends(require_service_api_key)],
+)
 async def get_application_report(request: Request, session_id: str, db: AsyncSession = Depends(get_session)):
     stage = await _resolve_stage(request, session_id)
     if stage is None or stage == "discovery":
+        return await _latest_persisted_report(db, session_id)
+
+    # Once handed to the platform, the report is the assessment it was
+    # submitted with — re-running it would store a new result on every view
+    # and could drift from what staff are deciding on.
+    application = await db.get(Application, uuid.UUID(session_id))
+    if application is not None and application.platform_application_id is not None:
         return await _latest_persisted_report(db, session_id)
 
     interview_graph = request.app.state.interview_graph
@@ -117,7 +132,6 @@ async def get_application_report(request: Request, session_id: str, db: AsyncSes
     except ValueError:
         return await _latest_persisted_report(db, session_id)
 
-    application = await db.get(Application, uuid.UUID(session_id))
     score_report = result["score_report"]
     route_result = result["route"]
 

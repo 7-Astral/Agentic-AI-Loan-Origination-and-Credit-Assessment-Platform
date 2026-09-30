@@ -31,6 +31,7 @@ class InterviewState(TypedDict, total=False):
     attempts: Annotated[dict[str, int], _merge]
 
     current_batch: list[dict]
+    pending_question: str | None
     last_error: str | None
     repair: bool
     turn: int
@@ -42,10 +43,13 @@ async def select_node(state: InterviewState) -> dict:
     return {"current_batch": batch}
 
 
-async def ask_node(state: InterviewState) -> dict:
+async def compose_question_node(state: InterviewState) -> dict:
+    """Computes the question text and nothing else — no interrupt() here, so
+    (unlike ask_node) this node runs to completion exactly once and its
+    result is committed to checkpointed state before ask_node ever pauses.
+    Same split discovery.py already uses between classify_type_node (does
+    the LLM work) and clarify_type_node (does the interrupting)."""
     batch = state["current_batch"]
-    turn = state.get("turn", 0) + 1
-
     question = await ask(
         batch,
         state.get("filled") or {},
@@ -53,11 +57,31 @@ async def ask_node(state: InterviewState) -> dict:
         repair=state.get("repair", False),
         validation_error=state.get("last_error"),
     )
+    return {"pending_question": question}
+
+
+async def ask_node(state: InterviewState) -> dict:
+    batch = state["current_batch"]
+    turn = state.get("turn", 0) + 1
+    question = state.get("pending_question")
+    if question is None:
+        # Fallback for an interview thread checkpointed while paused inside
+        # the old, unsplit ask_node (i.e. mid-turn before this change
+        # shipped) — state won't have pending_question yet. Safe, just
+        # doesn't get this fix's saving on that one turn.
+        question = await ask(
+            batch,
+            state.get("filled") or {},
+            state.get("transcript") or [],
+            repair=state.get("repair", False),
+            validation_error=state.get("last_error"),
+        )
 
     reply = interrupt({"question": question, "turn": turn})
 
     return {
         "turn": turn,
+        "pending_question": None,
         "transcript": [
             {"role": "assistant", "content": question},
             {"role": "user", "content": reply},
@@ -125,13 +149,15 @@ def route_after_ingest(state: InterviewState) -> Literal["select", "finish"]:
 def build_graph(checkpointer=None):
     g = StateGraph(InterviewState)
     g.add_node("select", select_node)
+    g.add_node("compose_question", compose_question_node)
     g.add_node("ask", ask_node)
     g.add_node("ingest", ingest_node)
     g.add_node("finish", finish_node)
 
     g.add_edge(START, "select")
     g.add_conditional_edges("select", route_after_select,
-                            {"ask": "ask", "finish": "finish"})
+                            {"ask": "compose_question", "finish": "finish"})
+    g.add_edge("compose_question", "ask")
     g.add_edge("ask", "ingest")
     g.add_conditional_edges("ingest", route_after_ingest,
                             {"select": "select", "finish": "finish"})

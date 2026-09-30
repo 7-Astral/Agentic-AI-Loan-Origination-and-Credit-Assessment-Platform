@@ -6,8 +6,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ResultSteps } from "@/components/documents/result-steps";
 import { SourcePanel, type DocLabState } from "@/components/documents/source-panel";
-import { Button } from "@/components/ui/button";
-import { ExtractionError, extractDocument, getDocumentOptions, sampleDocumentUrl } from "@/lib/api";
+import { Button } from "@/components/kit/button";
+import { ExtractionError, extractDocument, getDocumentOptions, sampleDocumentUrl } from "@/lib/playground-api";
 import type { DocumentOptions, DocumentSample, ExtractResponse } from "@/lib/types/documents";
 
 const AUTO_DEBOUNCE_MS = 300;

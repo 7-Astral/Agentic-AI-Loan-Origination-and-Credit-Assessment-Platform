@@ -1,17 +1,22 @@
-import type { Metadata } from "next";
-import type { ReactNode } from "react";
-
 import "./globals.css";
+import type { Metadata } from "next";
+import Providers from "./providers";
 
 export const metadata: Metadata = {
-  title: "Agentic AI Loan Origination Platform",
-  description: "Agentic AI Loan Origination and Credit Assessment Platform",
+  title: "Loan Origination Platform",
+  description: "Agentic AI loan origination and credit assessment platform",
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body className="bg-slate-50 font-sans text-slate-900 antialiased">
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }

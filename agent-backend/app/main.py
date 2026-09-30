@@ -13,8 +13,8 @@ def health():
     return {
         "status": "ok",
         "env": settings.app_env,
-        "llm_model": settings.llm_model,
         "core_banking": settings.core_banking_base_url,
+        "catalog": settings.catalog_base_url,
     }
 
 

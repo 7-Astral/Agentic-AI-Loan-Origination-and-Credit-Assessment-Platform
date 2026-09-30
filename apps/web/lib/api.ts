@@ -1,180 +1,435 @@
-import type { ApplicationState, RequiredDocument, TurnResponse } from "@/lib/types/application.ts";
-import type { DocumentOptions, ExtractRequest, ExtractResponse } from "@/lib/types/documents";
-import type { AssessRequest, AssessResponse, PlaygroundOptions } from "@/lib/types/playground";
-import type { ApplicationList, ApplicationReport } from "@/lib/types/report";
+import { handleExpiredSession } from "./session";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-export interface HealthResponse {
+export interface UserOut {
+  id: string;
+  email: string;
+  full_name: string;
+  role: "customer" | "staff" | "admin";
+  bank_id: string | null;
+  position_id: string | null;
+  is_active: boolean;
+}
+
+export interface TokenResponse {
+  access_token: string;
+  token_type: string;
+  user: UserOut;
+}
+
+export interface DashboardStats {
+  total_users: number;
+  total_banks: number;
+  total_loan_products: number;
+  total_applications: number;
+}
+
+export interface BankOut {
+  id: string;
+  name: string;
+  code: string;
+  contact_email: string | null;
   status: string;
-  database: string;
 }
 
-export async function checkHealth(): Promise<HealthResponse> {
-  const response = await fetch(`${API_BASE_URL}/health`, { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error(`Health check failed with status ${response.status}`);
-  }
-  return response.json() as Promise<HealthResponse>;
+export interface LoanProductOut {
+  id: string;
+  bank_id: string;
+  product_type: string;
+  name: string;
+  min_amount: number;
+  max_amount: number;
+  interest_rate_min: number;
+  interest_rate_max: number;
+  tenure_min_months: number;
+  tenure_max_months: number;
+  is_active: boolean;
 }
 
-export async function startApplication(productCode?: string): Promise<TurnResponse> {
-  const response = await fetch(`${API_BASE_URL}/api/v1/applications`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(productCode ? { product_code: productCode } : {}),
-  });
-  if (!response.ok) {
-    throw new Error(`Failed to start application (status ${response.status})`);
-  }
-  return response.json() as Promise<TurnResponse>;
+export interface LendingPolicyOut {
+  id: string;
+  bank_id: string;
+  product_id: string | null;
+  auto_approval_max_amount: number;
+  min_credit_score: number;
+  max_dti_ratio: number;
+  is_active: boolean;
 }
 
-export async function sendMessage(sessionId: string, message: string): Promise<TurnResponse> {
-  const response = await fetch(`${API_BASE_URL}/api/v1/applications/${sessionId}/messages`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message }),
-  });
-  if (!response.ok) {
-    throw new Error(`Failed to send message (status ${response.status})`);
-  }
-  return response.json() as Promise<TurnResponse>;
+export interface AuditLogOut {
+  id: string;
+  entity_type: string;
+  entity_id: string;
+  entity_label?: string | null;
+  action: string;
+  performed_by: string | null;
+  created_at: string;
 }
 
-/** Returns null when the session id is unknown (404), so callers can start fresh. */
-export async function getApplication(sessionId: string): Promise<ApplicationState | null> {
-  const response = await fetch(`${API_BASE_URL}/api/v1/applications/${sessionId}`, {
-    cache: "no-store",
-  });
-  if (response.status === 404) {
-    return null;
-  }
-  if (!response.ok) {
-    throw new Error(`Failed to load application (status ${response.status})`);
-  }
-  return response.json() as Promise<ApplicationState>;
+export interface BankPositionOut {
+  id: string;
+  bank_id: string;
+  title: string;
+  rank: number;
+  max_approval_amount: number | null;
+  can_manage_staff: boolean;
+  can_manage_products: boolean;
 }
 
-export async function listRequiredDocuments(sessionId: string): Promise<RequiredDocument[]> {
-  const response = await fetch(`${API_BASE_URL}/api/v1/applications/${sessionId}/documents/required`, {
-    cache: "no-store",
-  });
-  if (!response.ok) {
-    throw new Error(`Failed to load required documents (status ${response.status})`);
-  }
-  const data = await response.json();
-  return data.documents as RequiredDocument[];
+export interface LoanApplicationOut {
+  id: string;
+  applicant_id: string;
+  applicant_name?: string | null;
+  applicant_email?: string | null;
+  bank_id: string;
+  product_id: string;
+  loan_type: string;
+  requested_amount: number;
+  purpose: string | null;
+  status: string;
+  created_at: string;
+  pending_position_title: string | null;
+  chat_session_id: string | null;
 }
 
-export async function uploadNextDocument(
-  sessionId: string,
-  file: File,
-): Promise<{ status: string; verification_type: string; reason?: string }> {
-  const formData = new FormData();
-  formData.append("file", file);
-
-  const response = await fetch(`${API_BASE_URL}/api/v1/applications/${sessionId}/documents/next`, {
-    method: "POST",
-    body: formData,
-  });
-  if (!response.ok) {
-    const detail = await response.json().catch(() => null);
-    throw new Error(detail?.detail ?? `Upload failed (status ${response.status})`);
-  }
-  return response.json();
+export interface ChatReportTranscriptEntry {
+  role: string;
+  content: string;
+  turn: number | null;
+  created_at: string;
 }
 
-export async function getPlaygroundOptions(): Promise<PlaygroundOptions> {
-  const response = await fetch(`${API_BASE_URL}/api/v1/playground/options`, { cache: "no-store" });
-  if (!response.ok) {
-    const detail = await response.json().catch(() => null);
-    throw new Error(detail?.detail ?? `Failed to load playground options (status ${response.status})`);
-  }
-  return response.json() as Promise<PlaygroundOptions>;
+export interface ChatReportSlot {
+  slot_key: string;
+  // From the product's interview schema; null if the schema couldn't be loaded.
+  label?: string | null;
+  group?: string | null;
+  type?: string | null;
+  value: unknown;
+  source: string | null;
+  turn: number | null;
 }
 
-export async function runPlaygroundAssessment(
-  request: AssessRequest,
-  signal?: AbortSignal,
-): Promise<AssessResponse> {
-  const response = await fetch(`${API_BASE_URL}/api/v1/playground/assess`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(request),
-    signal,
-  });
-  if (!response.ok) {
-    const detail = await response.json().catch(() => null);
-    throw new Error(detail?.detail ?? `Assessment failed (status ${response.status})`);
-  }
-  return response.json() as Promise<AssessResponse>;
+export interface ChatReportAssessment {
+  product_code: string;
+  metrics: Record<string, { state: string; value: unknown; unit: string | null }>;
+  metrics_computed: number;
+  metrics_total: number;
+  rule_results: Array<{ rule_id: string; status: string; message?: string }>;
+  // Matches agent-backend's rules.engine.route(): a tier plus counts, not
+  // an "outcome" field.
+  route: {
+    tier?: string;
+    fail_count?: number;
+    flag_count?: number;
+    provisional_count?: number;
+    [key: string]: unknown;
+  };
+  created_at: string;
 }
 
-
-export async function getDocumentOptions(): Promise<DocumentOptions> {
-  const response = await fetch(`${API_BASE_URL}/api/v1/playground/documents/options`, { cache: "no-store" });
-  if (!response.ok) {
-    const detail = await response.json().catch(() => null);
-    throw new Error(detail?.detail ?? `Failed to load document lab options (status ${response.status})`);
-  }
-  return response.json() as Promise<DocumentOptions>;
+export interface ChatReportDocument {
+  document_id: string;
+  verification_type: string;
+  original_filename: string;
+  content_type: string;
+  status: string;
+  uploaded_at: string;
+  extraction: { extracted_fields: Record<string, unknown>; notes: string } | null;
+  verifications: Array<{ slot_id: string; declared_value: string; extracted_value: string; status: string }>;
 }
 
-export function sampleDocumentUrl(sampleId: string): string {
-  return `${API_BASE_URL}/api/v1/playground/documents/samples/${sampleId}/file`;
+export interface ChatReportDecision {
+  outcome: string;
+  reasoning: string;
+  decided_at: string;
 }
 
-export async function listBankApplications(
-  bankId: string,
-  limit = 50,
-  offset = 0,
-): Promise<ApplicationList> {
-  const params = new URLSearchParams({ bank_id: bankId, limit: String(limit), offset: String(offset) });
-  const response = await fetch(`${API_BASE_URL}/api/v1/applications?${params}`, { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error(`Failed to load applications (status ${response.status})`);
-  }
-  return response.json() as Promise<ApplicationList>;
+export interface ChatReport {
+  session_id: string;
+  status: string;
+  bank_id: string;
+  applicant_id: string | null;
+  product_code: string | null;
+  platform_application_id: string | null;
+  platform_status: string | null;
+  created_at: string;
+  updated_at: string;
+  transcript: ChatReportTranscriptEntry[];
+  slots: ChatReportSlot[];
+  assessment: ChatReportAssessment | null;
+  documents: ChatReportDocument[];
+  decision: ChatReportDecision | null;
 }
 
-export async function getApplicationReport(sessionId: string): Promise<ApplicationReport> {
-  const response = await fetch(`${API_BASE_URL}/api/v1/applications/${sessionId}/report`, {
-    cache: "no-store",
-  });
-  if (!response.ok) {
-    const detail = await response.json().catch(() => null);
-    throw new Error(detail?.detail ?? `Failed to load report (status ${response.status})`);
-  }
-  return response.json() as Promise<ApplicationReport>;
+// Scored Five C's assessment report — agent-backend's GET
+// /api/v1/applications/{session_id}/report, proxied by services/api.
+export type FiveC = "capacity" | "capital" | "character" | "collateral" | "conditions";
+
+export interface AssessmentGroupScore {
+  score: number | null;
+  state: "computed" | "unavailable" | "not_applicable";
+  metrics_used: { metric: string; raw_value: unknown; unit: string | null; normalized_score: number }[];
+  metrics_skipped: { metric: string; reason: string }[];
 }
 
-export class ExtractionError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-  ) {
+export interface AssessmentReport {
+  session_id: string;
+  product_code: string;
+  product_name: string | null;
+  status: string;
+  generated_at: string;
+  group_scores: Partial<Record<FiveC, AssessmentGroupScore>>;
+  overall_score: number | null;
+  weights_applied: Partial<Record<FiveC, number>>;
+  tier: string;
+  data_completeness: Partial<Record<FiveC, string>>;
+  conditions_of_approval: { id: string; category: string; text: string; reason: string; blocking: boolean }[];
+  rule_based_indicator: { tier: string; fail_count: number; flag_count: number; provisional_count: number };
+  metrics_computed: number;
+  metrics_total: number;
+  narrative_summary: string;
+  risk_profile: {
+    category: "low" | "medium" | "high";
+    factors: { severity: "low" | "medium" | "high"; label: string; detail: string }[];
+  };
+  applicant_summary: { id: string; label: string; value: unknown }[];
+  key_figures: { metric: string; label: string; value: unknown; unit: string | null }[];
+  policy_comparison: {
+    metric: string;
+    label: string;
+    value: unknown;
+    unit: string | null;
+    threshold: unknown;
+    threshold_label: string;
+    meets_threshold: boolean;
+  }[];
+}
+
+export interface ApplicationDecisionPayload {
+  decision: "approved" | "rejected";
+  reason?: string;
+  approved_amount?: number;
+}
+
+export interface ApplicationDecisionOut {
+  application_id: string;
+  status: string;
+  decision: string;
+  decided_at: string;
+}
+
+export interface NotificationOut {
+  id: string;
+  title: string;
+  message: string;
+  entity_type: string | null;
+  entity_id: string | null;
+  is_read: boolean;
+  created_at: string;
+}
+
+export interface CreateStaffPayload {
+  email: string;
+  password: string;
+  full_name: string;
+  bank_id: string;
+  position_id?: string | null;
+}
+
+export interface CreateBankStaffPayload {
+  email: string;
+  password: string;
+  full_name: string;
+  position_id: string;
+}
+
+export interface UpdateBankStaffPayload {
+  full_name?: string;
+  position_id?: string;
+}
+
+export interface CreateBankPayload {
+  name: string;
+  code: string;
+  contact_email?: string;
+}
+
+export interface CreateBankPositionPayload {
+  title: string;
+  rank: number;
+  max_approval_amount?: number | null;
+  can_manage_staff: boolean;
+  can_manage_products: boolean;
+}
+
+export interface CreateLoanProductPayload {
+  product_type: string;
+  name: string;
+  min_amount: number;
+  max_amount: number;
+  interest_rate_min: number;
+  interest_rate_max: number;
+  tenure_min_months: number;
+  tenure_max_months: number;
+}
+
+export interface UpdateLoanProductPayload {
+  product_type?: string;
+  name?: string;
+  min_amount?: number;
+  max_amount?: number;
+  interest_rate_min?: number;
+  interest_rate_max?: number;
+  tenure_min_months?: number;
+  tenure_max_months?: number;
+}
+
+export interface CreateLendingPolicyPayload {
+  product_id?: string | null;
+  auto_approval_max_amount: number;
+  min_credit_score: number;
+  max_dti_ratio: number;
+}
+
+export interface UpdateLendingPolicyPayload {
+  product_id?: string | null;
+  auto_approval_max_amount?: number;
+  min_credit_score?: number;
+  max_dti_ratio?: number;
+}
+
+export interface LoanApplyPayload {
+  bank_id: string;
+  product_id: string;
+  requested_amount: number;
+  purpose?: string;
+  tenure_requested_months: number;
+}
+
+export class ApiError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
     super(message);
+    this.status = status;
   }
 }
 
-export async function extractDocument(request: ExtractRequest, signal?: AbortSignal): Promise<ExtractResponse> {
-  const form = new FormData();
-  form.append("verification_type", request.verificationType);
-  form.append("declared", JSON.stringify(request.declared));
-  form.append("live", String(request.live));
-  form.append("categorize", String(request.categorize ?? true));
-  if (request.sampleId) form.append("sample_id", request.sampleId);
-  if (request.file && !request.sampleId) form.append("file", request.file);
+async function request<T>(path: string, options: RequestInit = {}, token?: string | null): Promise<T> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(options.headers as Record<string, string> | undefined),
+  };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const response = await fetch(`${API_BASE_URL}/api/v1/playground/documents/extract`, {
-    method: "POST",
-    body: form,
-    signal,
-  });
-  if (!response.ok) {
-    const detail = await response.json().catch(() => null);
-    throw new ExtractionError(detail?.detail ?? `Extraction failed (status ${response.status})`, response.status);
+  const res = await fetch(`${API_URL}${path}`, { ...options, headers, cache: "no-store" });
+
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const body = await res.json();
+      detail = body.detail || detail;
+    } catch {
+      /* ignore parse errors */
+    }
+    // Only an authenticated call going stale, not a failed login attempt
+    // (which also returns 401 but never carries a token here).
+    if (res.status === 401 && token) handleExpiredSession();
+    throw new ApiError(res.status, detail);
   }
-  return response.json() as Promise<ExtractResponse>;
+  if (res.status === 204) return undefined as T;
+  return res.json();
 }
+
+export const api = {
+  login: (email: string, password: string) =>
+    request<TokenResponse>("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
+
+  register: (email: string, password: string, full_name: string) =>
+    request<TokenResponse>("/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ email, password, full_name }),
+    }),
+
+  me: (token: string) => request<UserOut>("/auth/me", {}, token),
+
+  // Platform admin (cross-bank)
+  dashboard: (token: string) => request<DashboardStats>("/admin/dashboard", {}, token),
+  users: (token: string) => request<UserOut[]>("/admin/users", {}, token),
+  banks: (token: string) => request<BankOut[]>("/admin/banks", {}, token),
+  createBank: (token: string, payload: CreateBankPayload) =>
+    request<BankOut>("/admin/banks", { method: "POST", body: JSON.stringify(payload) }, token),
+  deactivateBank: (token: string, id: string) =>
+    request<BankOut>(`/admin/banks/${id}/deactivate`, { method: "POST" }, token),
+  reactivateBank: (token: string, id: string) =>
+    request<BankOut>(`/admin/banks/${id}/reactivate`, { method: "POST" }, token),
+  bankPositionsForAdmin: (token: string, bankId: string) =>
+    request<BankPositionOut[]>(`/admin/banks/${bankId}/positions`, {}, token),
+  createBankPositionForAdmin: (token: string, bankId: string, payload: CreateBankPositionPayload) =>
+    request<BankPositionOut>(
+      `/admin/banks/${bankId}/positions`,
+      { method: "POST", body: JSON.stringify(payload) },
+      token
+    ),
+  loanProducts: (token: string) => request<LoanProductOut[]>("/admin/loan-products", {}, token),
+  lendingPolicies: (token: string) => request<LendingPolicyOut[]>("/admin/lending-policies", {}, token),
+  auditLogs: (token: string) => request<AuditLogOut[]>("/admin/audit-logs", {}, token),
+  createStaff: (token: string, payload: CreateStaffPayload) =>
+    request<UserOut>("/admin/staff", { method: "POST", body: JSON.stringify(payload) }, token),
+  deactivateUser: (token: string, id: string) =>
+    request<UserOut>(`/admin/users/${id}/deactivate`, { method: "POST" }, token),
+  reactivateUser: (token: string, id: string) =>
+    request<UserOut>(`/admin/users/${id}/reactivate`, { method: "POST" }, token),
+
+  // Bank self-service (scoped to the logged-in staff member's own bank)
+  bankPositions: (token: string) => request<BankPositionOut[]>("/bank/positions", {}, token),
+  bankStaff: (token: string) => request<UserOut[]>("/bank/staff", {}, token),
+  createBankStaff: (token: string, payload: CreateBankStaffPayload) =>
+    request<UserOut>("/bank/staff", { method: "POST", body: JSON.stringify(payload) }, token),
+  updateBankStaff: (token: string, id: string, payload: UpdateBankStaffPayload) =>
+    request<UserOut>(`/bank/staff/${id}`, { method: "PATCH", body: JSON.stringify(payload) }, token),
+  deactivateBankStaff: (token: string, id: string) =>
+    request<UserOut>(`/bank/staff/${id}/deactivate`, { method: "POST" }, token),
+  reactivateBankStaff: (token: string, id: string) =>
+    request<UserOut>(`/bank/staff/${id}/reactivate`, { method: "POST" }, token),
+  bankProducts: (token: string) => request<LoanProductOut[]>("/bank/loan-products", {}, token),
+  createBankProduct: (token: string, payload: CreateLoanProductPayload) =>
+    request<LoanProductOut>("/bank/loan-products", { method: "POST", body: JSON.stringify(payload) }, token),
+  updateBankProduct: (token: string, id: string, payload: UpdateLoanProductPayload) =>
+    request<LoanProductOut>(`/bank/loan-products/${id}`, { method: "PATCH", body: JSON.stringify(payload) }, token),
+  deactivateBankProduct: (token: string, id: string) =>
+    request<LoanProductOut>(`/bank/loan-products/${id}/deactivate`, { method: "POST" }, token),
+  reactivateBankProduct: (token: string, id: string) =>
+    request<LoanProductOut>(`/bank/loan-products/${id}/reactivate`, { method: "POST" }, token),
+  bankPolicies: (token: string) => request<LendingPolicyOut[]>("/bank/lending-policies", {}, token),
+  createBankPolicy: (token: string, payload: CreateLendingPolicyPayload) =>
+    request<LendingPolicyOut>("/bank/lending-policies", { method: "POST", body: JSON.stringify(payload) }, token),
+  updateBankPolicy: (token: string, id: string, payload: UpdateLendingPolicyPayload) =>
+    request<LendingPolicyOut>(`/bank/lending-policies/${id}`, { method: "PATCH", body: JSON.stringify(payload) }, token),
+  deactivateBankPolicy: (token: string, id: string) =>
+    request<LendingPolicyOut>(`/bank/lending-policies/${id}/deactivate`, { method: "POST" }, token),
+  reactivateBankPolicy: (token: string, id: string) =>
+    request<LendingPolicyOut>(`/bank/lending-policies/${id}/reactivate`, { method: "POST" }, token),
+  bankApplications: (token: string) => request<LoanApplicationOut[]>("/bank/loan-applications", {}, token),
+  bankChatReport: (token: string, applicationId: string) =>
+    request<ChatReport>(`/bank/loan-applications/${applicationId}/chat-report`, {}, token),
+  bankAssessmentReport: (token: string, applicationId: string) =>
+    request<AssessmentReport>(`/bank/loan-applications/${applicationId}/assessment-report`, {}, token),
+  decideApplication: (token: string, applicationId: string, payload: ApplicationDecisionPayload) =>
+    request<ApplicationDecisionOut>(
+      `/bank/loan-applications/${applicationId}/decision`,
+      { method: "POST", body: JSON.stringify(payload) },
+      token
+    ),
+  bankAuditLogs: (token: string) => request<AuditLogOut[]>("/bank/audit-logs", {}, token),
+  notifications: (token: string) => request<NotificationOut[]>("/bank/notifications", {}, token),
+  markNotificationRead: (token: string, id: string) =>
+    request<NotificationOut>(`/bank/notifications/${id}/read`, { method: "POST" }, token),
+
+  // Customer-facing loans
+  browseProducts: () => request<LoanProductOut[]>("/loans/products"),
+  applyForLoan: (token: string, payload: LoanApplyPayload) =>
+    request<LoanApplicationOut>("/loans/apply", { method: "POST", body: JSON.stringify(payload) }, token),
+  myApplications: (token: string) => request<LoanApplicationOut[]>("/loans/my-applications", {}, token),
+};

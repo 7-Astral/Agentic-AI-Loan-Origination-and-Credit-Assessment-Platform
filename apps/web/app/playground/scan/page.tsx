@@ -6,9 +6,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ScanStage, type ScanPhase, type StagePage } from "@/components/scan/scan-stage";
 import { ValuesPanel } from "@/components/scan/values-panel";
-import { Button } from "@/components/ui/button";
-import { Select } from "@/components/ui/select";
-import { extractDocument, getDocumentOptions, sampleDocumentUrl } from "@/lib/api";
+import { Button } from "@/components/kit/button";
+import { Select } from "@/components/kit/select";
+import { extractDocument, getDocumentOptions, sampleDocumentUrl } from "@/lib/playground-api";
 import type { Box, DocumentOptions, DocumentSample, ExtractResponse } from "@/lib/types/documents";
 import { cn } from "@/lib/utils";
 

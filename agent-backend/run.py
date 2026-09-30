@@ -6,7 +6,8 @@ import uvicorn
 
 
 async def main():
-    config = uvicorn.Config("app.backend:app", host="127.0.0.1", port=8000)
+    # 8001, not 8000 — the main platform's services/api already owns 8000.
+    config = uvicorn.Config("app.backend:app", host="127.0.0.1", port=8001)
     server = uvicorn.Server(config)
     await server.serve()
 

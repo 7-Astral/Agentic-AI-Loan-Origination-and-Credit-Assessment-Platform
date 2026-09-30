@@ -41,14 +41,55 @@ async def get_bank_id(session_id: str) -> str:
 
 
 async def ensure_application(
-    session_id: str, bank_id: str = DEFAULT_BANK_ID, status: str = "discovery"
+    session_id: str,
+    bank_id: str = DEFAULT_BANK_ID,
+    status: str = "discovery",
+    applicant_id: str | None = None,
 ) -> None:
     app_id = uuid.UUID(session_id)
     async with async_session() as db:
         existing = await db.get(Application, app_id)
         if existing is not None:
             return
-        db.add(Application(id=app_id, bank_id=bank_id, status=status))
+        db.add(
+            Application(
+                id=app_id,
+                bank_id=bank_id,
+                status=status,
+                applicant_id=uuid.UUID(applicant_id) if applicant_id else None,
+            )
+        )
+        await db.commit()
+
+
+async def get_applicant_id(session_id: str) -> str | None:
+    async with async_session() as db:
+        application = await db.get(Application, uuid.UUID(session_id))
+        return str(application.applicant_id) if application and application.applicant_id else None
+
+
+# The main platform's LoanStatus values, translated into this service's own
+# STATUS_ORDER vocabulary (see app.models.application.STATUS_ORDER).
+PLATFORM_STATUS_TO_LOCAL = {
+    "submitted": "assessment",
+    "under_review": "underwriter_review",
+    "approved": "approved",
+    "rejected": "declined",
+    "disbursed": "approved",
+}
+
+
+async def record_platform_submission(session_id: str, platform_application_id: str, platform_status: str) -> None:
+    app_id = uuid.UUID(session_id)
+    async with async_session() as db:
+        application = await db.get(Application, app_id)
+        if application is None:
+            return
+        application.platform_application_id = uuid.UUID(platform_application_id)
+        application.platform_status = platform_status
+        local_status = PLATFORM_STATUS_TO_LOCAL.get(platform_status)
+        if local_status:
+            application.status = _advance(application.status, local_status)
         await db.commit()
 
 

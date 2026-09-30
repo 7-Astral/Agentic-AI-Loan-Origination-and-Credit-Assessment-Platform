@@ -44,7 +44,7 @@ def _bureau_summary(filled: dict, report: dict | None) -> dict:
 @router.get("/options")
 async def options():
     try:
-        products = await core_banking.list_products()
+        products = await core_banking.assessment.list_reference_products()
     except httpx.HTTPError as exc:
         raise HTTPException(502, f"Core banking unavailable: {exc!r}")
     return {"presets": PRESETS, "products": products, "bureau_scenarios": await list_scenarios()}
@@ -54,9 +54,11 @@ async def options():
 async def assess(payload: AssessRequest):
     bureau_report = await get_credit_report(payload.filled, payload.bureau_scenario)
     try:
+        product = await core_banking.assessment.get_reference_product(payload.product_code)
         result = await compute_assessment(
             payload.filled,
             payload.product_code,
+            product=product,
             bank_id=DEFAULT_BANK_ID,
             bank_transactions=SAMPLE_STATEMENT if payload.use_sample_statement else None,
             bureau_report=bureau_report,

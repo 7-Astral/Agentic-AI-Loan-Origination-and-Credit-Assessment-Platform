@@ -3,9 +3,9 @@
 import { FileText, Loader2, Upload } from "lucide-react";
 import { useRef } from "react";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
+import { Button } from "@/components/kit/button";
+import { Input } from "@/components/kit/input";
+import { Select } from "@/components/kit/select";
 import { describeCheck } from "@/lib/documents/labels";
 import type { DocumentOptions } from "@/lib/types/documents";
 import { cn } from "@/lib/utils";

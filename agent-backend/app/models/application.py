@@ -26,11 +26,19 @@ class Application(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
     bank_id: Mapped[str] = mapped_column(String(50), default=DEFAULT_BANK_ID)
-    applicant_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("identity.users.id"), nullable=True
-    )
+    # Real customer id from the main platform's public.users table (validated
+    # off that platform's own JWT — see app.core.identity). Deliberately NOT
+    # a foreign key to identity.users: that table is this service's own,
+    # unused, password-less user concept, a different table from the
+    # platform's real accounts even though both live in the same database.
+    applicant_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     product_code: Mapped[str | None] = mapped_column(String(30), nullable=True)
     status: Mapped[str] = mapped_column(String(30), default="discovery")
+    # Set once this interview has been handed into the main platform's real
+    # loan pipeline (services/api) — see app.services.core_banking.CatalogClient
+    # .submit_application and app.services.operational.record_platform_submission.
+    platform_application_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    platform_status: Mapped[str | None] = mapped_column(String(30), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 

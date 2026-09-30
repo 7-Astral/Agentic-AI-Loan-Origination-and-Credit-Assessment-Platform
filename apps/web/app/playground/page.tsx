@@ -6,8 +6,8 @@ import { useCallback, useEffect, useState } from "react";
 
 import { InputsPanel, type LabState } from "@/components/playground/inputs-panel";
 import { ResultsPanel } from "@/components/playground/results-panel";
-import { Button } from "@/components/ui/button";
-import { getPlaygroundOptions, runPlaygroundAssessment } from "@/lib/api";
+import { Button } from "@/components/kit/button";
+import { getPlaygroundOptions, runPlaygroundAssessment } from "@/lib/playground-api";
 import type {
   AssessRequest,
   AssessResponse,

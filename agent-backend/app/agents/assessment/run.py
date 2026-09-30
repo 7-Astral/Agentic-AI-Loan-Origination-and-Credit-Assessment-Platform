@@ -75,8 +75,10 @@ async def compute_assessment(
     bank_transactions: list[dict] | None = None,
     bureau_report: dict | None = None,
     policy_overrides: dict[str, dict] | None = None,
+    product: dict | None = None,
 ) -> dict:
-    product = await core_banking.get_product(product_code, bank_id=bank_id)
+    if product is None:
+        product = await core_banking.get_product(product_code, bank_id=bank_id)
     policy = {key: await _load_policy(key, bank_id) for key in POLICY_KEYS}
     for key, override in (policy_overrides or {}).items():
         if key not in POLICY_KEYS:

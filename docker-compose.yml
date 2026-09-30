@@ -16,12 +16,19 @@ services:
       timeout: 5s
       retries: 10
 
+  # Main platform: auth, banks, products, lending policies, staff, applications.
   api:
-    build:
-      context: ./services/api
+    build: ./services/api
     restart: unless-stopped
-    env_file:
-      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/loan_origination
+      JWT_SECRET: dev-secret-change-me
+      JWT_ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: "60"
+      # Inside the Docker network, agent-backend is reached by service name
+      # on its internal port (8000), not the host-mapped 8001 — used by the
+      # staff "view chat report" proxy (GET /bank/loan-applications/{id}/chat-report).
+      AGENT_BACKEND_BASE_URL: http://agent-backend:8000
     ports:
       - "8000:8000"
     volumes:
@@ -29,15 +36,14 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
-  mock-bank:
+  # Assessment configuration: document checklists, HEM/shading policy,
+  # Five C's rules, interview slot schemas.
+  mock-core-banking:
     build:
       context: ./agent-backend
       dockerfile: mock_core_banking/Dockerfile
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/loan_origination
     ports:
@@ -47,7 +53,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    command: uvicorn mock_core_banking.main:app --host 0.0.0.0 --port 9000 --reload
 
   mock-bureau:
     build:
@@ -58,9 +63,9 @@ services:
       - "9200:9000"
     volumes:
       - ./agent-backend/mock_bureau:/app/mock_bureau
-    command: uvicorn mock_bureau.main:app --host 0.0.0.0 --port 9000 --reload
 
-  backendapi:
+  # Chat agent: discovery, interview, document OCR, Five C's assessment.
+  agent-backend:
     build:
       context: ./agent-backend
       dockerfile: app/Dockerfile
@@ -68,10 +73,17 @@ services:
     env_file:
       - ./agent-backend/.env
     environment:
+      # Override the .env's localhost/127.0.0.1 addresses — inside the
+      # Docker network, services reach each other by service name.
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/loan_origination
       LANGGRAPH_DB_URL: postgresql://postgres:postgres@db:5432/loan_origination
       APP_DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/loan_origination
-      CORE_BANKING_BASE_URL: http://mock-bank:9000
+      CORE_BANKING_BASE_URL: http://mock-core-banking:9000
       BUREAU_BASE_URL: http://mock-bureau:9000
+      CATALOG_BASE_URL: http://api:8000
+      # Blank so it falls back to resolving by bank code (FNB001) instead
+      # of the .env's stale hardcoded id — see CatalogClient._default_bank_id_async.
+      PLATFORM_BANK_ID: ""
     ports:
       - "8001:8000"
     volumes:
@@ -79,26 +91,31 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      mock-bank:
+      api:
+        condition: service_started
+      mock-core-banking:
         condition: service_started
       mock-bureau:
         condition: service_started
-    command: uvicorn app.backend:app --host 0.0.0.0 --port 8000
+
   web:
-    build:
-      context: ./apps/web
+    build: ./apps/web
     restart: unless-stopped
-    env_file:
-      - .env
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_AGENT_API_URL: http://localhost:8001
+      # File-change events don't cross a Windows bind mount, so without
+      # polling the dev server keeps serving stale modules after an edit.
+      WATCHPACK_POLLING: "true"
+    depends_on:
+      - api
+      - agent-backend
     ports:
       - "3000:3000"
     volumes:
       - ./apps/web:/app
       - /app/node_modules
       - /app/.next
-    depends_on:
-      - backendapi
-    command: pnpm dev
 
 volumes:
   pgdata:

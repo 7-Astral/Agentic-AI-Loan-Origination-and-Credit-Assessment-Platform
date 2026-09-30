@@ -2,9 +2,9 @@
 
 import { ChevronRight, RotateCcw } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
+import { Button } from "@/components/kit/button";
+import { Input } from "@/components/kit/input";
+import { Select } from "@/components/kit/select";
 import { SECTIONS, prettify, type Field } from "@/lib/playground/fields";
 import type { Filled, FilledValue, PlaygroundOptions, PlaygroundProduct } from "@/lib/types/playground";
 import { cn } from "@/lib/utils";

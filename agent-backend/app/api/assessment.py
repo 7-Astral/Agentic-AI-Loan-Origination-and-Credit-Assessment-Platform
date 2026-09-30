@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Request, Depends
 from sqlalchemy import select
 
-from app.agents.assessment.narrative import generate_narrative
+from app.agents.assessment.narrative import generate_narrative, is_template
 from app.agents.assessment.report_extras import assemble_report_extras
 from app.agents.assessment.risk_profile import build_risk_profile
 from app.agents.assessment.run import _load_policy, run_retail_assessment
@@ -67,14 +67,8 @@ async def _latest_persisted_report(db: AsyncSession, session_id: str) -> Applica
     )
 
     narrative_summary = result.narrative_summary
-    if not narrative_summary:
-        # Legacy row from before narrative caching existed — generate once,
-        # ad hoc, without persisting (AssessmentResult rows aren't updated).
-        pseudo_score_report = {
-            "overall_score": result.overall_score, "tier": result.tier or "underwriter_review",
-            "group_scores": result.group_scores or {}, "data_completeness": result.data_completeness or {},
-        }
-        narrative_summary = await generate_narrative(pseudo_score_report, product)
+    if not narrative_summary or is_template(narrative_summary):
+        narrative_summary = None
 
     risk_profile = build_risk_profile(
         result.rule_results or [], metrics, filled, result.data_completeness or {},
@@ -106,9 +100,6 @@ async def _latest_persisted_report(db: AsyncSession, session_id: str) -> Applica
     )
 
 
-# Server-to-server only: services/api proxies it to bank staff
-# (GET /bank/loan-applications/{id}/assessment-report) after checking the
-# application belongs to their bank.
 @router.get(
     "/{session_id}/report",
     response_model=ApplicationReportOut,
@@ -119,9 +110,7 @@ async def get_application_report(request: Request, session_id: str, db: AsyncSes
     if stage is None or stage == "discovery":
         return await _latest_persisted_report(db, session_id)
 
-    # Once handed to the platform, the report is the assessment it was
-    # submitted with — re-running it would store a new result on every view
-    # and could drift from what staff are deciding on.
+
     application = await db.get(Application, uuid.UUID(session_id))
     if application is not None and application.platform_application_id is not None:
         return await _latest_persisted_report(db, session_id)
@@ -162,3 +151,42 @@ async def get_application_report(request: Request, session_id: str, db: AsyncSes
         verifications=result["verifications"],
         transcript=result["transcript"],
     )
+
+
+@router.get("/{session_id}/report/narrative", dependencies=[Depends(require_service_api_key)])
+async def get_report_narrative(session_id: str, db: AsyncSession = Depends(get_session)) -> dict:
+    try:
+        app_id = uuid.UUID(session_id)
+    except ValueError:
+        raise HTTPException(404, "Unknown session")
+    latest = await db.execute(
+        select(AssessmentResult)
+        .where(AssessmentResult.application_id == app_id)
+        .order_by(AssessmentResult.created_at.desc())
+        .limit(1)
+    )
+    result = latest.scalar_one_or_none()
+    if result is None:
+        raise HTTPException(409, "No assessment available for this application yet")
+    if result.narrative_summary and not is_template(result.narrative_summary):
+        return {"narrative_summary": result.narrative_summary, "ai_generated": True}
+
+    application = await db.get(Application, app_id)
+    product: dict = {}
+    if application is not None and application.product_code:
+        try:
+            product = await core_banking.get_product(application.product_code, bank_id=application.bank_id)
+        except Exception:
+            product = {}
+    score_report = {
+        "overall_score": result.overall_score, "tier": result.tier or "underwriter_review",
+        "group_scores": result.group_scores or {}, "data_completeness": result.data_completeness or {},
+    }
+    text, ai_generated = await generate_narrative(score_report, product)
+    if not ai_generated:
+        return {"narrative_summary": text, "ai_generated": False}
+
+    result.narrative_summary = text
+    result.narrative_summary_score = result.overall_score
+    await db.commit()
+    return {"narrative_summary": text, "ai_generated": True}

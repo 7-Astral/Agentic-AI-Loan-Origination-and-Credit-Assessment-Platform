@@ -91,6 +91,11 @@ export interface LoanApplicationOut {
   created_at: string;
   pending_position_title: string | null;
   chat_session_id: string | null;
+  tenure_requested_months?: number | null;
+  product_name?: string | null;
+  applicant_legal_name?: string | null;
+  assessment_tier?: string | null;
+  assessment_score?: number | null;
 }
 
 export interface ChatReportTranscriptEntry {
@@ -102,7 +107,6 @@ export interface ChatReportTranscriptEntry {
 
 export interface ChatReportSlot {
   slot_key: string;
-  // From the product's interview schema; null if the schema couldn't be loaded.
   label?: string | null;
   group?: string | null;
   type?: string | null;
@@ -117,8 +121,7 @@ export interface ChatReportAssessment {
   metrics_computed: number;
   metrics_total: number;
   rule_results: Array<{ rule_id: string; status: string; message?: string }>;
-  // Matches agent-backend's rules.engine.route(): a tier plus counts, not
-  // an "outcome" field.
+
   route: {
     tier?: string;
     fail_count?: number;
@@ -137,7 +140,18 @@ export interface ChatReportDocument {
   status: string;
   uploaded_at: string;
   extraction: { extracted_fields: Record<string, unknown>; notes: string } | null;
-  verifications: Array<{ slot_id: string; declared_value: string; extracted_value: string; status: string }>;
+  verifications: Array<{
+    slot_id: string;
+    extracted_field?: string | null;
+    declared_value: string;
+    extracted_value: string;
+    status: string;
+  }>;
+  layout?: {
+    width: number;
+    height: number;
+    fields: Record<string, { x: number; y: number; w: number; h: number }>;
+  } | null;
 }
 
 export interface ChatReportDecision {
@@ -163,8 +177,7 @@ export interface ChatReport {
   decision: ChatReportDecision | null;
 }
 
-// Scored Five C's assessment report — agent-backend's GET
-// /api/v1/applications/{session_id}/report, proxied by services/api.
+
 export type FiveC = "capacity" | "capital" | "character" | "collateral" | "conditions";
 
 export interface AssessmentGroupScore {
@@ -189,7 +202,7 @@ export interface AssessmentReport {
   rule_based_indicator: { tier: string; fail_count: number; flag_count: number; provisional_count: number };
   metrics_computed: number;
   metrics_total: number;
-  narrative_summary: string;
+  narrative_summary: string | null;
   risk_profile: {
     category: "low" | "medium" | "high";
     factors: { severity: "low" | "medium" | "high"; label: string; detail: string }[];
@@ -316,6 +329,15 @@ export class ApiError extends Error {
   }
 }
 
+async function requestBlob(path: string, token: string): Promise<Blob> {
+  const res = await fetch(`${API_URL}${path}`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+  if (!res.ok) {
+    if (res.status === 401) handleExpiredSession();
+    throw new ApiError(res.status, res.statusText);
+  }
+  return res.blob();
+}
+
 async function request<T>(path: string, options: RequestInit = {}, token?: string | null): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -333,8 +355,7 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
     } catch {
       /* ignore parse errors */
     }
-    // Only an authenticated call going stale, not a failed login attempt
-    // (which also returns 401 but never carries a token here).
+    
     if (res.status === 401 && token) handleExpiredSession();
     throw new ApiError(res.status, detail);
   }
@@ -354,7 +375,6 @@ export const api = {
 
   me: (token: string) => request<UserOut>("/auth/me", {}, token),
 
-  // Platform admin (cross-bank)
   dashboard: (token: string) => request<DashboardStats>("/admin/dashboard", {}, token),
   users: (token: string) => request<UserOut[]>("/admin/users", {}, token),
   banks: (token: string) => request<BankOut[]>("/admin/banks", {}, token),
@@ -382,7 +402,6 @@ export const api = {
   reactivateUser: (token: string, id: string) =>
     request<UserOut>(`/admin/users/${id}/reactivate`, { method: "POST" }, token),
 
-  // Bank self-service (scoped to the logged-in staff member's own bank)
   bankPositions: (token: string) => request<BankPositionOut[]>("/bank/positions", {}, token),
   bankStaff: (token: string) => request<UserOut[]>("/bank/staff", {}, token),
   createBankStaff: (token: string, payload: CreateBankStaffPayload) =>
@@ -414,6 +433,14 @@ export const api = {
   bankApplications: (token: string) => request<LoanApplicationOut[]>("/bank/loan-applications", {}, token),
   bankChatReport: (token: string, applicationId: string) =>
     request<ChatReport>(`/bank/loan-applications/${applicationId}/chat-report`, {}, token),
+  bankDocumentFile: (token: string, applicationId: string, documentId: string) =>
+    requestBlob(`/bank/loan-applications/${applicationId}/documents/${documentId}/file`, token),
+  bankAssessmentNarrative: (token: string, applicationId: string) =>
+    request<{ narrative_summary: string; ai_generated: boolean }>(
+      `/bank/loan-applications/${applicationId}/assessment-report/narrative`,
+      {},
+      token,
+    ),
   bankAssessmentReport: (token: string, applicationId: string) =>
     request<AssessmentReport>(`/bank/loan-applications/${applicationId}/assessment-report`, {}, token),
   decideApplication: (token: string, applicationId: string, payload: ApplicationDecisionPayload) =>
@@ -427,7 +454,6 @@ export const api = {
   markNotificationRead: (token: string, id: string) =>
     request<NotificationOut>(`/bank/notifications/${id}/read`, { method: "POST" }, token),
 
-  // Customer-facing loans
   browseProducts: () => request<LoanProductOut[]>("/loans/products"),
   applyForLoan: (token: string, payload: LoanApplyPayload) =>
     request<LoanApplicationOut>("/loans/apply", { method: "POST", body: JSON.stringify(payload) }, token),

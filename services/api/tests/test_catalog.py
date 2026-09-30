@@ -1,7 +1,4 @@
-"""Core-banking-style catalog contract (/api/v1/...) consumed by the chat
-agent — X-API-Key auth, and the exact contract the "Home Loan H" bug from
-earlier this project depended on: two products sharing the same
-product_type must both appear together in a listing."""
+
 from app.core.config import settings
 from tests.conftest import make_product
 
@@ -19,10 +16,6 @@ async def test_wrong_api_key_rejected(client, bank):
 
 
 async def test_two_products_same_product_type_both_listed(client, bank, db):
-    """Regression test for the earlier bug where a product with the wrong
-    product_type stored ("Home Loan H" stored as personal instead of home)
-    silently vanished from its expected loan-type grouping — this pins down
-    that two ACTUAL same-type products both come back together."""
     await make_product(db, bank_id=bank.id, name="Home Purchase Loan", product_type="home")
     await make_product(db, bank_id=bank.id, name="Home Renovation Loan", product_type="home")
 
@@ -77,9 +70,9 @@ async def test_submit_application_routes_through_same_lending_logic(client, bank
     )
     assert resp.status_code == 201
     body = resp.json()
-    assert body["outcome"] == "auto_approved"
-    assert body["status"] == "approved"
+    assert body["outcome"] == "escalated"
+    assert body["status"] == "under_review"
 
-    # Same manager-notification path as the plain apply-form flow.
+    # Same notification path as the plain apply-form flow.
     notifications = await client.get("/bank/notifications", headers=manager_headers)
     assert any(n["entity_id"] == body["application_id"] for n in notifications.json())

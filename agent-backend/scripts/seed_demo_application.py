@@ -1,19 +1,4 @@
-"""Seeds one complete, submitted chat application for demos and manual checks.
 
-Skips the LLM interview: the answers come from a playground preset
-(app.agents.assessment.demo_profiles.PRESETS) and are written straight into
-the interview graph's checkpoint as a finished interview. Everything after
-that runs through the real code paths — the Five C's assessment
-(run_retail_assessment) and the hand-off into services/api's loan pipeline —
-so the application shows up in the staff portal with a full chat report.
-
-Needs services/api, mock_core_banking and mock_bureau running, and the
-customer account to exist (services/api's scripts/seed.py creates it).
-
-    python -m scripts.seed_demo_application [preset_id] [customer_email] [password]
-
-Defaults: personal_strong, customer@bank.com, Customer@123.
-"""
 import asyncio
 import sys
 import uuid
@@ -26,10 +11,13 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from app.agents.assessment.demo_profiles import PRESETS
 from app.agents.assessment.run import run_retail_assessment
+from app.agents.document.reconcile import reconcile
+from app.agents.document.sample_docs import get_sample, load_recording, sample_file
 from app.agents.interaction.graph import build_graph
 from app.core.config import get_settings
 from app.core.db import async_session
 from app.core.identity import get_customer_id_from_token
+from app.models.documents import Document, DocumentExtraction, VerificationResult
 from app.services.core_banking import core_banking
 from app.services.operational import (
     ensure_application,
@@ -37,6 +25,8 @@ from app.services.operational import (
     record_platform_submission,
     set_application_product,
 )
+
+SEED_DOCUMENTS = ("payslip", "bank_statement")
 
 # Preset loan types map onto the platform catalog's loan types.
 CATALOG_LOAN_TYPE = {"personal": "personal", "vehicle": "personal", "home": "home"}
@@ -51,6 +41,31 @@ async def _customer_token(email: str, password: str) -> str:
         )
         resp.raise_for_status()
         return resp.json()["access_token"]
+
+
+async def _attach_sample_documents(session_id: str, filled: dict) -> None:
+    
+    base = sample_file(get_sample(SEED_DOCUMENTS[0])).parents[4]
+    async with async_session() as db:
+        for sample_id in SEED_DOCUMENTS:
+            sample = get_sample(sample_id)
+            result = load_recording(sample)["result"]
+            path = sample_file(sample)
+            document = Document(
+                id=uuid.uuid4(),
+                application_id=uuid.UUID(session_id),
+                verification_type=sample["verification_type"],
+                original_filename=path.name,
+                storage_path=path.relative_to(base).as_posix(),
+                content_type="application/pdf" if path.suffix == ".pdf" else "image/png",
+                status="extracted",
+            )
+            db.add(document)
+            await db.flush()
+            db.add(DocumentExtraction(document_id=document.id, extracted_fields=result["fields"], notes=result["notes"]))
+            for vr in reconcile(sample["verification_type"], result["fields"], filled):
+                db.add(VerificationResult(application_id=uuid.UUID(session_id), document_id=document.id, **vr))
+        await db.commit()
 
 
 async def main(preset_id: str, email: str, password: str) -> None:
@@ -109,6 +124,7 @@ async def main(preset_id: str, email: str, password: str) -> None:
         )
         values = (await graph.aget_state(config)).values
         await mirror_turn(session_id, values, complete=True)
+        await _attach_sample_documents(session_id, filled)
 
         async with async_session() as db:
             assessment = await run_retail_assessment(graph, config, db, session_id)
@@ -121,6 +137,9 @@ async def main(preset_id: str, email: str, password: str) -> None:
         tenure_requested_months=int(filled["loan_term_months"]),
         purpose=filled.get("purpose_detail") or filled.get("loan_purpose"),
         external_reference=session_id,
+        applicant_legal_name=filled.get("full_name"),
+        assessment_tier=(assessment.get("score_report") or {}).get("tier"),
+        assessment_score=(assessment.get("score_report") or {}).get("overall_score"),
     )
     await record_platform_submission(session_id, result["application_id"], result["status"])
 

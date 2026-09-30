@@ -1,16 +1,3 @@
-"""Two backends behind one familiar interface.
-
-- CatalogClient talks to the main platform's services/api: the source of
-  truth for banks/loan_products/lending_policies (product catalog).
-- AssessmentConfigClient talks to mock_core_banking: document checklists,
-  HEM/shading policy, Five C's rules, and interview slot schemas — bank
-  assessment configuration, not staff-managed catalog data.
-
-`core_banking` below is the same object call sites already import; only its
-insides changed, so interview.py / documents.py / assessment/run.py did not
-need to change their call sites for the catalog-facing methods.
-"""
-
 import httpx
 
 from app.core.config import get_settings
@@ -40,7 +27,6 @@ class _BaseClient:
 
 
 class CatalogClient(_BaseClient):
-    """Product catalog — services/api."""
 
     def __init__(self) -> None:
         s = get_settings()
@@ -50,10 +36,7 @@ class CatalogClient(_BaseClient):
         self._resolved_bank_id: str | None = None
 
     async def _default_bank_id_async(self) -> str:
-        """Resolves the platform's default bank id. Prefers an explicit
-        platform_bank_id if one is configured; otherwise looks it up by the
-        stable bank code (set once, in seed.py) so this never goes stale
-        when the database is wiped and reseeded with fresh random ids."""
+
         if self._configured_bank_id:
             return self._configured_bank_id
         if not self._resolved_bank_id:
@@ -92,9 +75,11 @@ class CatalogClient(_BaseClient):
         tenure_requested_months: int,
         purpose: str | None,
         external_reference: str | None,
+        applicant_legal_name: str | None = None,
+        assessment_tier: str | None = None,
+        assessment_score: float | None = None,
     ) -> dict:
-        """Hands a completed interview into the platform's real loan
-        pipeline (loan_applications + route_loan_decision)."""
+       
         return await self._post(
             "/api/v1/applications",
             json={
@@ -105,12 +90,14 @@ class CatalogClient(_BaseClient):
                 "tenure_requested_months": tenure_requested_months,
                 "purpose": purpose,
                 "external_reference": external_reference,
+                "applicant_legal_name": applicant_legal_name,
+                "assessment_tier": assessment_tier,
+                "assessment_score": assessment_score,
             },
         )
 
 
 class AssessmentConfigClient(_BaseClient):
-    """Document checklists, policy, rules, interview slot schemas — mock_core_banking."""
 
     def __init__(self) -> None:
         s = get_settings()
@@ -137,9 +124,7 @@ class AssessmentConfigClient(_BaseClient):
         data = await self._get("/api/v1/rules", params={"framework": framework, "bank_id": bank_id})
         return data["rules"]
 
-    # Reference products (PL-STD-001, VL-NEW-020, ...) still seeded in
-    # mock_core_banking. Not the live catalog — the playground's presets are
-    # written against these codes, so it reads them from here.
+   
     async def list_reference_products(self, bank_id: str = DEFAULT_BANK_ID) -> list[dict]:
         data = await self._get("/api/v1/products", params={"bank_id": bank_id})
         return data["products"]
@@ -149,13 +134,11 @@ class AssessmentConfigClient(_BaseClient):
 
 
 class CoreBankingClient:
-    """Facade kept for source-compatibility with existing call sites."""
 
     def __init__(self) -> None:
         self.catalog = CatalogClient()
         self.assessment = AssessmentConfigClient()
 
-    # -- catalog --------------------------------------------------------
     async def list_loan_types(self, bank_id: str = DEFAULT_BANK_ID) -> list[dict]:
         return await self.catalog.list_loan_types(bank_id=None if bank_id == DEFAULT_BANK_ID else bank_id)
 
@@ -170,22 +153,14 @@ class CoreBankingClient:
         return await self.catalog.get_product(product_code, bank_id=None if bank_id == DEFAULT_BANK_ID else bank_id)
 
     async def resolve_default_bank_id(self) -> str:
-        """Resolves the platform's default bank id the same way catalog calls
-        already do — an explicit platform_bank_id if configured, otherwise by
-        the stable bank code (see CatalogClient._default_bank_id_async).
-        Needed wherever a bank id has to be known before any catalog call can
-        happen, e.g. starting a brand-new chat session."""
+       
         return await self.catalog._default_bank_id_async()
 
     async def get_product_requirements(self, product_code: str, bank_id: str = DEFAULT_BANK_ID) -> dict:
-        """Interview slot schema for a product. Looks the product up in the
-        catalog first (to learn its assessment-config loan_type), then asks
-        mock_core_banking for the static slot schema under that loan_type —
-        the product itself never needs to exist in mock_core_banking's DB."""
+       
         product = await self.get_product(product_code, bank_id=bank_id)
         return await self.assessment.get_interview_schema(product_code, loan_type=product["loan_type"])
 
-    # -- assessment configuration ----------------------------------------
     async def get_document_requirements(
         self, loan_type: str, category: str, bank_id: str = DEFAULT_BANK_ID
     ) -> dict:

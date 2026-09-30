@@ -173,11 +173,7 @@ async def get_product(product_code: str, bank_id: uuid.UUID = Query(...), db: As
 async def submit_application(
     payload: SubmitApplicationRequest, db: AsyncSession = Depends(get_db)
 ) -> SubmitApplicationResponse:
-    """Hands a completed chat-agent interview into the real loan pipeline:
-    creates a genuine loan_applications row and runs it through the same
-    deterministic auto-approve/escalate routing (route_loan_decision) that
-    the plain customer apply form uses, so it shows up for staff exactly the
-    same way regardless of which front door the customer used."""
+
     result = await db.execute(
         select(LoanProduct).where(
             LoanProduct.bank_id == payload.bank_id,
@@ -208,6 +204,9 @@ async def submit_application(
         tenure_requested_months=payload.tenure_requested_months,
         status="submitted",
         chat_session_id=payload.external_reference,
+        applicant_legal_name=payload.applicant_legal_name,
+        assessment_tier=payload.assessment_tier,
+        assessment_score=payload.assessment_score,
     )
     db.add(application)
     await db.flush()

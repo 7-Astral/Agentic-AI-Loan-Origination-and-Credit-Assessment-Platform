@@ -100,9 +100,9 @@ export default function StaffOverview() {
       <Card className="mt-6 p-5">
         <h2 className="text-sm font-semibold text-slate-900">How approvals work</h2>
         <p className="mt-1 text-sm text-slate-500">
-          Every application is checked against your bank&apos;s auto-approval policy first. If it exceeds the
-          threshold, it&apos;s routed to the lowest position on your approval ladder whose limit covers the
-          amount, and everyone holding that position is notified. Review escalated applications under{" "}
+          Every application needs a human decision — nothing is approved automatically. Each one is routed to
+          the lowest position on your approval ladder whose limit covers the amount, and everyone holding that
+          position is notified. Review and decide applications under{" "}
           <span className="font-medium text-slate-700">Applications</span>.
         </p>
       </Card>

@@ -13,6 +13,9 @@ def slot(
     verification=None,
     regulatory_basis=None,
     group=None,
+    per_month=False,
+    per_year=False,
+    frequency_slot=None,
 ):
     return {
         "id": slot_id,
@@ -28,6 +31,9 @@ def slot(
         "verification": verification,
         "regulatory_basis": regulatory_basis,
         "ask_hint": ask_hint,
+        "per_month": per_month,
+        "per_year": per_year,
+        "frequency_slot": frequency_slot,
     }
 
 
@@ -239,25 +245,28 @@ PHASE_3 = [
     ),
     slot(
         "gross_annual_income", "Gross annual income", 3, "currency",
-        "Before tax; accept any frequency and normalise",
+        "Before tax; any frequency they like",
         sources=("extracted", "ask"),
         validation={"min": 0},
         verification="payslip_or_tax_return",
         regulatory_basis="Financial situation inquiry",
         group="income",
+        per_year=True,
     ),
     slot(
         "net_income_amount", "Net income per pay period", 3, "currency",
-        "After tax, as it lands in their account",
+        "After tax, as it lands in their account, and how often they get it",
         sources=("extracted", "ask"),
         validation={"min": 0},
         verification="bank_statements",
         regulatory_basis="Financial situation inquiry",
         group="income",
+        frequency_slot="net_income_frequency",
     ),
     slot(
         "net_income_frequency", "Net income frequency", 3, "choice",
-        "The pay cycle the net amount refers to",
+        "How often they receive the take-home amount they already gave — ask it as "
+        "'Is that $<amount> per week, fortnight, month or year?'",
         options=["weekly", "fortnightly", "monthly", "annually"],
         sources=("extracted", "ask"),
         group="income",

@@ -1,13 +1,18 @@
-"""End-to-end lending decision routing via POST /loans/apply — the
-deterministic auto-approve/escalate policy in app.core.lending_logic,
-including this session's own feature: manager notification on
-auto-approval, which previously notified no one at all."""
+
 from tests.conftest import auth_headers, make_policy, make_position, make_product, make_user
 
 
-async def test_auto_approval_notifies_bank_manager(client, customer_headers, customer_user, bank, manager_user, manager_headers, db):
+async def test_small_amount_is_never_auto_approved(client, customer_headers, bank, db):
+    
     product = await make_product(db, bank_id=bank.id, min_amount=1000, max_amount=50000)
     await make_policy(db, bank_id=bank.id, auto_approval_max_amount=10000)
+    officer_position = await make_position(
+        db, bank_id=bank.id, title="Loan Officer", rank=2, max_approval_amount=20000,
+        can_manage_staff=False, can_manage_products=False,
+    )
+    officer = await make_user(
+        db, email="officer3@testdomain.org", role="staff", bank_id=bank.id, position_id=officer_position.id
+    )
 
     resp = await client.post(
         "/loans/apply",
@@ -22,20 +27,15 @@ async def test_auto_approval_notifies_bank_manager(client, customer_headers, cus
     )
     assert resp.status_code == 201
     body = resp.json()
-    assert body["status"] == "approved"
+    assert body["status"] == "under_review"
+    assert body["pending_position_title"] == "Loan Officer"
 
-    notifications = await client.get("/bank/notifications", headers=manager_headers)
-    assert notifications.status_code == 200
-    assert any(
-        n["entity_type"] == "loan_application" and n["entity_id"] == body["id"] and "auto-approved" in n["message"]
-        for n in notifications.json()
-    )
+    notifications = await client.get("/bank/notifications", headers=auth_headers(officer))
+    assert any(n["entity_id"] == body["id"] for n in notifications.json())
 
 
 async def test_over_threshold_escalates_to_covering_position(client, customer_headers, bank, db):
-    """No policy at all (or amount over it) routes to the lowest-rank
-    position whose max_approval_amount actually covers the amount, and only
-    staff holding that specific position are notified."""
+  
     product = await make_product(db, bank_id=bank.id, min_amount=1000, max_amount=100000)
     officer_position = await make_position(
         db, bank_id=bank.id, title="Loan Officer", rank=2, max_approval_amount=20000,
@@ -65,9 +65,6 @@ async def test_over_threshold_escalates_to_covering_position(client, customer_he
 
 
 async def test_escalation_picks_lowest_rank_position_that_covers_amount(client, customer_headers, bank, db):
-    """With two positions on the ladder, the escalation must go to the
-    lower-rank one that actually covers the amount — not automatically the
-    higher-authority one — and only that position's staff get notified."""
     product = await make_product(db, bank_id=bank.id, min_amount=1000, max_amount=100000)
     junior = await make_position(
         db, bank_id=bank.id, title="Loan Officer", rank=2, max_approval_amount=20000,
@@ -96,9 +93,7 @@ async def test_escalation_picks_lowest_rank_position_that_covers_amount(client, 
     )
     assert resp.status_code == 201
     body = resp.json()
-    # rank ascending order is [senior(rank1), junior(rank2)]; senior has
-    # unlimited approval so it's the first position that "covers" 15000 —
-    # this pins down the actual (rank-order, not authority-order) behavior.
+   
     assert body["pending_position_title"] == senior.title
 
     senior_notifications = await client.get("/bank/notifications", headers=auth_headers(senior_staff))
@@ -109,9 +104,6 @@ async def test_escalation_picks_lowest_rank_position_that_covers_amount(client, 
 
 
 async def test_no_policy_and_no_position_still_escalates_without_crashing(client, customer_headers, bank, db):
-    """A bank with no lending policy and no approval ladder configured at
-    all shouldn't 500 — it should still land the application in
-    under_review with no position assigned."""
     product = await make_product(db, bank_id=bank.id, min_amount=1000, max_amount=100000)
 
     resp = await client.post(

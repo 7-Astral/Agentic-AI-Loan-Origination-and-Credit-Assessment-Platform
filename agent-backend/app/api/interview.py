@@ -10,6 +10,8 @@ from app.agents.assessment.run import run_retail_assessment
 from app.agents.interaction.resolver import progress as compute_progress
 from app.api.schemas import (
     ApplicationResponse,
+    ChatMessageOut,
+    ResumeResponse,
     MessageRequest,
     ProductOption,
     Progress,
@@ -25,6 +27,7 @@ from app.services.core_banking import core_banking
 logger = logging.getLogger(__name__)
 from app.services.operational import (
     ensure_application,
+    latest_open_session,
     get_applicant_id,
     get_bank_id,
     mirror_transcript,
@@ -52,6 +55,18 @@ def _hints(batch: list[dict]) -> list[SlotHint]:
 def _interrupt_payload(result: dict) -> dict | None:
     interrupts = result.get("__interrupt__")
     return interrupts[0].value if interrupts else None
+
+
+def _pending_payload(snapshot) -> dict | None:
+    for task in snapshot.tasks or ():
+        for interrupt in getattr(task, "interrupts", ()) or ():
+            return interrupt.value
+    return None
+
+
+async def _discovery_length(request: Request, session_id: str) -> int:
+    snapshot = await request.app.state.discovery_graph.aget_state(_discovery_config(session_id))
+    return len((snapshot.values or {}).get("transcript") or [])
 
 
 async def _resolve_stage(request: Request, session_id: str) -> str | None:
@@ -106,7 +121,7 @@ async def _interview_turn(request: Request, session_id: str, result: dict) -> Tu
     payload = _interrupt_payload(result)
     complete = payload is None
 
-    await mirror_turn(session_id, values, complete)
+    await mirror_turn(session_id, values, complete, transcript_offset=await _discovery_length(request, session_id))
 
     return TurnResponse(
         session_id=session_id,
@@ -173,10 +188,6 @@ async def start_application(
     session_id = str(uuid.uuid4())
     bank_id = body.bank_id or get_settings().platform_bank_id
     if not bank_id:
-        # Nothing explicit configured — resolve dynamically by bank code,
-        # same as every catalog call already does (see CatalogClient in
-        # app.services.core_banking). Keeps a fresh reseed of the database
-        # from breaking session start just because the id changed.
         try:
             bank_id = await core_banking.resolve_default_bank_id()
         except httpx.HTTPStatusError as exc:
@@ -232,17 +243,6 @@ async def submit_application(
     request: Request, session_id: str, authorization: str | None = Header(default=None),
     db: AsyncSession = Depends(get_session),
 ) -> dict:
-    """Hands a completed interview into the main platform's real loan
-    pipeline. A deliberate, explicit action (not automatic the moment the
-    interview finishes) — like any loan application, the customer should
-    confirm before it becomes a binding submission staff will act on.
-
-    Runs the Five C's assessment first and records it (see
-    app.agents.assessment.run.run_retail_assessment) so every submitted
-    application has a real assessment — including the credit_score metric —
-    on file for staff to see in the chat report, not just the routing
-    outcome. Best-effort: a failure to compute the assessment is logged but
-    never blocks the actual submission."""
     await _check_ownership(session_id, authorization)
     stage = await _resolve_stage(request, session_id)
     if stage is None:
@@ -262,8 +262,10 @@ async def submit_application(
     if not product_code or "loan_amount" not in filled or "loan_term_months" not in filled:
         raise HTTPException(409, "Missing required loan details — the interview may not be complete")
 
+    score_report: dict = {}
     try:
-        await run_retail_assessment(interview_graph, _interview_config(session_id), db, session_id)
+        assessment = await run_retail_assessment(interview_graph, _interview_config(session_id), db, session_id)
+        score_report = assessment.get("score_report") or {}
     except Exception:
         logger.exception("Five C's assessment failed for session %s — continuing with submission", session_id)
 
@@ -279,6 +281,9 @@ async def submit_application(
             tenure_requested_months=int(filled["loan_term_months"]),
             purpose=str(purpose) if purpose else None,
             external_reference=session_id,
+            applicant_legal_name=filled.get("full_name"),
+            assessment_tier=score_report.get("tier"),
+            assessment_score=score_report.get("overall_score"),
         )
     except httpx.HTTPStatusError as exc:
         detail = exc.response.text
@@ -288,6 +293,52 @@ async def submit_application(
 
     await record_platform_submission(session_id, result["application_id"], result["status"])
     return result
+
+
+@router.get("/current", response_model=ResumeResponse)
+async def current_application(request: Request, authorization: str | None = Header(default=None)) -> ResumeResponse:
+    customer_id = get_customer_id_from_token(authorization)
+    if not customer_id:
+        raise HTTPException(401, "Sign in as a customer to resume an application")
+    session_id = await latest_open_session(customer_id)
+    if session_id is None:
+        raise HTTPException(404, "No application in progress")
+
+    discovery = await request.app.state.discovery_graph.aget_state(_discovery_config(session_id))
+    interview = await request.app.state.interview_graph.aget_state(_interview_config(session_id))
+    transcript = list((discovery.values or {}).get("transcript") or []) + list(
+        (interview.values or {}).get("transcript") or []
+    )
+    messages = [ChatMessageOut(role=m.get("role", ""), content=m.get("content", "")) for m in transcript]
+
+    if interview.values:
+        values = interview.values
+        payload = _pending_payload(interview)
+        complete = not interview.next
+        return ResumeResponse(
+            session_id=session_id,
+            stage="complete" if complete else "interview",
+            question=None if complete or payload is None else payload.get("question"),
+            slots_in_play=[] if complete else _hints(values.get("current_batch") or []),
+            progress=Progress(**compute_progress(values["slots"], values.get("filled") or {})),
+            complete=complete,
+            product_code=values.get("product_code"),
+            messages=messages,
+        )
+
+    if discovery.values:
+        payload = _pending_payload(discovery) or {}
+        stage = payload.get("stage", "discovery")
+        return ResumeResponse(
+            session_id=session_id,
+            stage=stage,
+            question=payload.get("question"),
+            complete=False,
+            products=_product_options(payload.get("products")) if stage == "product_selection" else None,
+            messages=messages,
+        )
+
+    raise HTTPException(404, "No application in progress")
 
 
 @router.get("/{session_id}", response_model=ApplicationResponse)

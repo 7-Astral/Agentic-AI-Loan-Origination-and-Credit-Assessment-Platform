@@ -5,6 +5,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
 from app.agents.interaction.extractor import extract
+from app.agents.interaction.periods import PERIODS_PER_YEAR, convert, read_stated_amount, to_annual, to_monthly
 from app.agents.interaction.questioner import ask
 from app.agents.interaction.resolver import commit, next_batch, progress
 from app.agents.interaction.validation import ValidationError, validate
@@ -44,11 +45,6 @@ async def select_node(state: InterviewState) -> dict:
 
 
 async def compose_question_node(state: InterviewState) -> dict:
-    """Computes the question text and nothing else — no interrupt() here, so
-    (unlike ask_node) this node runs to completion exactly once and its
-    result is committed to checkpointed state before ask_node ever pauses.
-    Same split discovery.py already uses between classify_type_node (does
-    the LLM work) and clarify_type_node (does the interrupting)."""
     batch = state["current_batch"]
     question = await ask(
         batch,
@@ -65,10 +61,6 @@ async def ask_node(state: InterviewState) -> dict:
     turn = state.get("turn", 0) + 1
     question = state.get("pending_question")
     if question is None:
-        # Fallback for an interview thread checkpointed while paused inside
-        # the old, unsplit ask_node (i.e. mid-turn before this change
-        # shipped) — state won't have pending_question yet. Safe, just
-        # doesn't get this fix's saving on that one turn.
         question = await ask(
             batch,
             state.get("filled") or {},
@@ -89,6 +81,39 @@ async def ask_node(state: InterviewState) -> dict:
     }
 
 
+def _pair_with_frequency(slot, raw, filled, new_filled, new_prov, by_id, turn):
+    amount, frequency = read_stated_amount(raw)
+    freq_slot_id = slot["frequency_slot"]
+    known = filled.get(freq_slot_id) or new_filled.get(freq_slot_id)
+    if not frequency or known == frequency:
+        return amount, None
+    if known in PERIODS_PER_YEAR:
+        try:
+            return float(convert(amount, frequency, known)), {"amount": amount, "frequency": frequency}
+        except (ArithmeticError, TypeError, ValueError):
+            return amount, None
+    freq_slot = by_id.get(freq_slot_id)
+    if freq_slot and frequency in (freq_slot.get("options") or []):
+        new_filled[freq_slot_id] = frequency
+        new_prov[freq_slot_id] = {"source": "extracted", "turn": turn}
+    return amount, None
+
+
+def _income_conflict(values: dict[str, Any]) -> str | None:
+    amount = values.get("net_income_amount")
+    frequency = values.get("net_income_frequency")
+    gross = values.get("gross_annual_income")
+    if amount is None or frequency not in PERIODS_PER_YEAR or not gross:
+        return None
+    net_annual = float(amount) * PERIODS_PER_YEAR[frequency]
+    if net_annual <= float(gross) * 1.02:
+        return None
+    return (
+        f"take-home of ${float(amount):,.0f} {frequency} would be about ${net_annual:,.0f} a year, "
+        f"more than the ${float(gross):,.0f} gross income — confirm the take-home amount and how often it's received"
+    )
+
+
 async def ingest_node(state: InterviewState) -> dict:
     batch = state["current_batch"]
     reply = state["transcript"][-1]["content"]
@@ -106,11 +131,33 @@ async def ingest_node(state: InterviewState) -> dict:
         slot = by_id.get(slot_id)
         if slot is None or slot_id in filled:
             continue
+        stated = None
+        if slot.get("per_month") or slot.get("per_year"):
+            amount, frequency = read_stated_amount(raw)
+            basis = "monthly" if slot.get("per_month") else "annually"
+            try:
+                raw = float(to_monthly(amount, frequency) if basis == "monthly" else to_annual(amount, frequency))
+            except (ArithmeticError, TypeError, ValueError):
+                raw = amount  # let validate() report it as unreadable
+            if frequency and frequency != basis:
+                stated = {"amount": amount, "frequency": frequency}
+        elif slot.get("frequency_slot"):
+            raw, stated = _pair_with_frequency(slot, raw, filled, new_filled, new_prov, by_id, turn)
         try:
             new_filled[slot_id] = validate(slot, raw)
             new_prov[slot_id] = {"source": "extracted", "turn": turn}
+            if stated:
+                new_prov[slot_id]["stated"] = stated
         except ValidationError as exc:
             errors.append(f"{slot['label']}: {exc}")
+
+    conflict = _income_conflict({**filled, **new_filled})
+    if conflict:
+        for sid in ("gross_annual_income", "net_income_amount", "net_income_frequency"):
+            if sid in new_filled:
+                new_filled.pop(sid)
+                new_prov.pop(sid, None)
+        errors.append(conflict)
 
     asked_ids = [s["id"] for s in batch]
     got_something = any(sid in new_filled for sid in asked_ids)

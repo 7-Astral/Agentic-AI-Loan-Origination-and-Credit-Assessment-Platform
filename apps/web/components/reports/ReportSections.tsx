@@ -1,495 +1,693 @@
-import { Badge } from "@/components/ui/Badge";
-import { IconAlert, IconCheck, IconFile, IconSparkle } from "@/components/icons";
-import type { AssessmentGroupScore, AssessmentReport, ChatReport, FiveC } from "@/lib/api";
+import type { ReactNode } from "react";
+import { useState } from "react";
+import { IBM_Plex_Mono } from "next/font/google";
+import { BudgetWaterfall, FiveCRadar } from "./ReportCharts";
+import type { AssessmentReport, ChatReport, FiveC, LoanApplicationOut } from "@/lib/api";
 import {
   ANSWER_GROUPS,
-  RISK_TONE,
   TIER,
-  type Tone,
   fmtAnswer,
+  fmtDate,
   fmtDateTime,
   fmtMetric,
+  fmtMoney,
   fmtScore,
   humanize,
   metricLabel,
+  statusLabel,
 } from "./format";
 
-// Sections of the staff application report (app/staff/applications/[id]/report).
-// Ordered for the officer's task: the recommendation and anything blocking
-// first, the evidence behind it on demand.
+
+
+const mono = IBM_Plex_Mono({ subsets: ["latin"], weight: ["400", "500"] });
+
+export const ui = {
+  panel: "rounded-[4px] border border-[#d6d9de] bg-white print:break-inside-avoid",
+  panelTitle: "text-[14px] font-semibold text-[#1b1e23]",
+  label: "text-[12px] text-[#5d6470]",
+  muted: "text-[#8a909a]",
+  brandButton:
+    "inline-flex items-center justify-center rounded-[4px] bg-[#1f5fa8] px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-[#164a85] disabled:opacity-50",
+  outlineButton:
+    "inline-flex items-center px-3.5 py-1.5 text-[13px] text-[#1f5fa8] transition-colors hover:bg-[#f3f6fa] disabled:opacity-50",
+};
+
+const TIER_PILL: Record<string, string> = {
+  emerald: "bg-[#e6f4ea] text-[#2e844a]",
+  amber: "bg-[#fdf3e1] text-[#8c5a00]",
+  red: "bg-[#fbe9e8] text-[#c23934]",
+  slate: "bg-[#eef0f3] text-[#5d6470]",
+  indigo: "bg-[#e3ecf7] text-[#1f5fa8]",
+};
+
+export function Pill({ tone, children }: { tone: keyof typeof TIER_PILL; children: ReactNode }) {
+  return <span className={`inline-flex items-center whitespace-nowrap rounded-[3px] px-2 py-0.5 text-[12px] font-medium ${TIER_PILL[tone]}`}>{children}</span>;
+}
+
+function PanelHeader({ title, aside }: { title: ReactNode; aside?: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-[#e3e6ea] px-4 py-3">
+      <h2 className={ui.panelTitle}>{title}</h2>
+      {aside && <div className={`text-[12px] ${ui.muted}`}>{aside}</div>}
+    </div>
+  );
+}
+
+
+export function RecordHeader({
+  applicantName,
+  accountName,
+  application,
+  assessment,
+  chat,
+  actions,
+}: {
+  applicantName: string;
+  accountName?: string | null;
+  application: LoanApplicationOut | null;
+  assessment: AssessmentReport | null;
+  chat: ChatReport | null;
+  actions: ReactNode;
+}) {
+  const facts = new Map(assessment?.applicant_summary.map((f) => [f.id, f.value]) ?? []);
+  const term = facts.get("loan_term_months") as number | undefined;
+  const reference = application?.id.split("-")[0].toUpperCase();
+
+  const fields: { label: string; value: ReactNode }[] = [
+    { label: "Application number", value: reference ? <span className={mono.className}>{reference}</span> : "—" },
+    { label: "Applicant", value: <span className="text-[#1f5fa8]">{applicantName}</span> },
+    ...(accountName && accountName.trim().toLowerCase() !== applicantName.trim().toLowerCase()
+      ? [{ label: "Login account", value: accountName }]
+      : []),
+    { label: "Requested amount", value: application ? fmtMoney(application.requested_amount) : "—" },
+    { label: "Requested term", value: term ? `${term} months` : "—" },
+    { label: "Product", value: assessment?.product_name ?? chat?.product_code ?? "—" },
+    { label: "Status", value: application ? statusLabel(application.status) : "—" },
+    { label: "Submitted", value: application ? fmtDate(application.created_at) : "—" },
+  ];
+
+  return (
+    <div className={ui.panel}>
+      <div className="flex flex-col gap-3 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[4px] bg-[#1f5fa8] text-white">
+            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <path d="M4 20V9l8-5 8 5v11M9 20v-6h6v6M3 20h18" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </span>
+          <div className="min-w-0">
+            <p className={ui.label}>Loan Application</p>
+            <h1 className="truncate text-[20px] font-semibold leading-tight text-[#1b1e23]">
+              {applicantName}
+              {reference && <span className="font-normal text-[#5d6470]"> – {reference}</span>}
+            </h1>
+          </div>
+        </div>
+        <div className="flex shrink-0 divide-x divide-[#cfd3d9] overflow-hidden rounded-[4px] border border-[#cfd3d9] print:hidden">
+          {actions}
+        </div>
+      </div>
+      <dl className="grid grid-cols-2 gap-x-8 gap-y-3 border-t border-[#e3e6ea] px-4 py-3 sm:grid-cols-4 xl:flex xl:gap-10">
+        {fields.map((f) => (
+          <div key={f.label} className="min-w-0">
+            <dt className={ui.label}>{f.label}</dt>
+            <dd className="mt-0.5 truncate text-[14px] text-[#1b1e23]">{f.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+// -------------------------------------------------------------- stage bar --
+
+const STAGES = ["Interview", "Documents", "Assessment", "Credit review", "Decision"];
+
+function stageIndex(application: LoanApplicationOut | null, chat: ChatReport | null): number {
+  const decided = application && ["approved", "rejected", "disbursed"].includes(application.status);
+  if (decided || chat?.decision) return STAGES.length;
+  if (application) return 3;
+  return { interview: 0, documents: 1, assessment: 2 }[chat?.status ?? ""] ?? 0;
+}
+
+export function StageBar({ application, chat }: { application: LoanApplicationOut | null; chat: ChatReport | null }) {
+  const current = stageIndex(application, chat);
+  const outcome = application?.status === "rejected" ? "Declined" : application?.status === "approved" ? "Approved" : null;
+
+  return (
+    <div className={`${ui.panel} px-3 py-2.5`}>
+      <ol className="flex">
+        {STAGES.map((stage, i) => {
+          const done = i < current;
+          const active = i === current;
+          const label = i === STAGES.length - 1 && outcome ? outcome : stage;
+          const colour =
+            i === STAGES.length - 1 && outcome === "Declined" && done
+              ? "bg-[#c23934] text-white"
+              : done
+                ? "bg-[#2e844a] text-white"
+                : active
+                  ? "bg-[#16325c] font-semibold text-white"
+                  : "bg-[#e5e8ec] text-[#343a42]";
+          return (
+            <li
+              key={stage}
+              aria-current={active ? "step" : undefined}
+              className={`relative flex h-8 min-w-0 flex-1 items-center justify-center text-[13px] print:border print:border-[#d6d9de] ${colour}`}
+              style={{
+                clipPath:
+                  i === 0
+                    ? "polygon(0 0, calc(100% - 12px) 0, 100% 50%, calc(100% - 12px) 100%, 0 100%)"
+                    : i === STAGES.length - 1
+                      ? "polygon(0 0, 100% 0, 100% 100%, 0 100%, 12px 50%)"
+                      : "polygon(0 0, calc(100% - 12px) 0, 100% 50%, calc(100% - 12px) 100%, 0 100%, 12px 50%)",
+                marginLeft: i === 0 ? 0 : -8,
+                borderRadius: i === 0 ? "16px 0 0 16px" : i === STAGES.length - 1 ? "0 16px 16px 0" : undefined,
+              }}
+            >
+              <span className="truncate px-5" title={label}>
+                {done && i !== STAGES.length - 1 ? "✓ " : ""}
+                {/* Narrow screens name only the current stage; the rest show a tick or step number. */}
+                <span className={active ? "" : "hidden md:inline"}>{label}</span>
+                {!active && !done && <span className="md:hidden">{i + 1}</span>}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------- tabs --
+
+export function RecordTabs<T extends string>({
+  tabs,
+  active,
+  onChange,
+}: {
+  tabs: { id: T; label: string; count?: number }[];
+  active: T;
+  onChange: (id: T) => void;
+}) {
+  function onKeyDown(e: React.KeyboardEvent, index: number) {
+    const step = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+    if (!step) return;
+    const next = tabs[(index + step + tabs.length) % tabs.length];
+    onChange(next.id);
+    document.getElementById(`tab-${next.id}`)?.focus();
+  }
+
+  return (
+    <div role="tablist" aria-label="Report sections" className="flex gap-1 overflow-x-auto border-b border-[#e3e6ea] px-3 print:hidden">
+      {tabs.map((t, i) => {
+        const selected = t.id === active;
+        return (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            id={`tab-${t.id}`}
+            aria-selected={selected}
+            aria-controls={`panel-${t.id}`}
+            tabIndex={selected ? 0 : -1}
+            onClick={() => onChange(t.id)}
+            onKeyDown={(e) => onKeyDown(e, i)}
+            className={`-mb-px shrink-0 border-b-[3px] px-3 py-3 text-[14px] transition-colors focus:outline-none focus-visible:bg-[#f3f6fa] ${
+              selected ? "border-[#1f5fa8] font-semibold text-[#1b1e23]" : "border-transparent text-[#343a42] hover:text-[#1f5fa8]"
+            }`}
+          >
+            {t.label}
+            {t.count !== undefined && <span className="ml-1 text-[#8a909a]">({t.count})</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+
+function Section({ title, aside, defaultOpen = true, children }: {
+  title: string;
+  aside?: ReactNode;
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <section className="border-b border-[#e3e6ea] last:border-b-0">
+      <div className="flex items-center justify-between gap-3 px-4 py-3">
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+          className="flex items-center gap-2 text-[14px] text-[#1b1e23] hover:text-[#1f5fa8]"
+        >
+          <span className={`inline-block text-[10px] text-[#5d6470] transition-transform ${open ? "rotate-90" : ""}`}>▶</span>
+          {title}
+        </button>
+        {aside}
+      </div>
+      <div className={open ? "px-4 pb-4 pl-10" : "hidden print:block print:px-4 print:pb-4 print:pl-10"}>{children}</div>
+    </section>
+  );
+}
+
+function FieldGrid({ fields }: { fields: { label: string; value: ReactNode }[] }) {
+  return (
+    <dl className="grid grid-cols-1 gap-x-8 sm:grid-cols-2">
+      {fields.map((f, i) => (
+        <div key={`${f.label}-${i}`} className="border-b border-[#e3e6ea] py-2">
+          <dt className={ui.label}>{f.label}</dt>
+          <dd className="mt-0.5 text-[14px] text-[#1b1e23]">{f.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 
 const FIVE_C_ORDER: FiveC[] = ["capacity", "capital", "character", "collateral", "conditions"];
-
-const FIVE_C_META: Record<FiveC, { label: string; blurb: string }> = {
-  capacity: { label: "Capacity", blurb: "Ability to service the repayments" },
-  capital: { label: "Capital", blurb: "Deposit, savings and net assets" },
-  character: { label: "Character", blurb: "Credit history and conduct" },
-  collateral: { label: "Collateral", blurb: "Security offered for the loan" },
-  conditions: { label: "Conditions", blurb: "Purpose, structure and context" },
+const FIVE_C_LABEL: Record<FiveC, string> = {
+  capacity: "Capacity — ability to repay",
+  capital: "Capital — savings and net assets",
+  character: "Character — credit history",
+  collateral: "Collateral — security offered",
+  conditions: "Conditions — purpose and context",
 };
 
-const TONE_TEXT: Record<Tone, string> = {
-  slate: "text-slate-700",
-  indigo: "text-indigo-700",
-  emerald: "text-emerald-700",
-  amber: "text-amber-700",
-  red: "text-red-700",
-};
+function KpiStrip({ assessment, creditScore }: { assessment: AssessmentReport; creditScore: number | null }) {
+  const tier = TIER[assessment.tier] ?? { label: humanize(assessment.tier), tone: "slate" as const, hint: "" };
+  const cells = assessment.policy_comparison.slice(0, 3).map((p) => ({
+    label: p.label,
+    value: fmtMetric(p.value, p.unit),
+    note: `${p.threshold_label.replace(/ \(.*\)$/, "")}: ${fmtMetric(p.threshold, p.unit)}`,
+    ok: p.meets_threshold,
+  }));
 
-const TONE_ACCENT: Record<Tone, string> = {
-  slate: "border-l-slate-300",
-  indigo: "border-l-indigo-500",
-  emerald: "border-l-emerald-500",
-  amber: "border-l-amber-500",
-  red: "border-l-red-500",
-};
-
-function scoreTone(score: number): Tone {
-  if (score >= 80) return "emerald";
-  if (score >= 60) return "amber";
-  return "red";
-}
-
-const BAR_FILL: Record<Tone, string> = {
-  slate: "bg-slate-400",
-  indigo: "bg-indigo-500",
-  emerald: "bg-emerald-500",
-  amber: "bg-amber-500",
-  red: "bg-red-500",
-};
-
-function ScoreBar({ score, label }: { score: number; label: string }) {
   return (
-    <div
-      role="meter"
-      aria-label={label}
-      aria-valuenow={score}
-      aria-valuemin={0}
-      aria-valuemax={100}
-      className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100 print:border print:border-slate-200"
-    >
-      <div className={`h-full rounded-full ${BAR_FILL[scoreTone(score)]}`} style={{ width: `${Math.min(Math.max(score, 0), 100)}%` }} />
-    </div>
-  );
-}
-
-export function SectionHeading({ children, action }: { children: React.ReactNode; action?: React.ReactNode }) {
-  return (
-    <div className="mb-3 flex items-center justify-between gap-3">
-      <h2 className="text-sm font-semibold text-slate-900">{children}</h2>
-      {action}
-    </div>
-  );
-}
-
-function Panel({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return (
-    <div className={`rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm shadow-slate-200/50 print:break-inside-avoid print:shadow-none ${className}`}>
-      {children}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------- summary --
-
-function Tile({ label, value, caption, tone = "slate", children }: {
-  label: string;
-  value: React.ReactNode;
-  caption?: React.ReactNode;
-  tone?: Tone;
-  children?: React.ReactNode;
-}) {
-  return (
-    <div className={`rounded-2xl border border-l-4 border-slate-200/80 bg-white p-4 shadow-sm shadow-slate-200/50 print:shadow-none ${TONE_ACCENT[tone]}`}>
-      <p className="text-xs font-medium text-slate-500">{label}</p>
-      <p className={`mt-1 text-xl font-semibold tracking-tight ${tone === "slate" ? "text-slate-900" : TONE_TEXT[tone]}`}>{value}</p>
-      {children}
-      {caption && <p className="mt-1 text-xs text-slate-400">{caption}</p>}
-    </div>
-  );
-}
-
-export function SummaryTiles({ assessment, creditScore }: { assessment: AssessmentReport; creditScore: number | null }) {
-  const tier = TIER[assessment.tier] ?? { label: humanize(assessment.tier), tone: "slate" as Tone, hint: "" };
-  const factors = assessment.risk_profile.factors.length;
-  return (
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-      <Tile label="Recommendation" value={tier.label} caption={tier.hint} tone={tier.tone} />
-      <Tile
-        label="Weighted score"
-        value={
-          <>
-            {fmtScore(assessment.overall_score)}
-            <span className="text-sm font-normal text-slate-400"> / 100</span>
-          </>
-        }
-        caption={`${assessment.metrics_computed} of ${assessment.metrics_total} metrics computed`}
-        tone={assessment.overall_score === null ? "slate" : scoreTone(assessment.overall_score)}
-      >
-        {assessment.overall_score !== null && (
-          <div className="mt-2">
-            <ScoreBar score={assessment.overall_score} label="Weighted score" />
-          </div>
-        )}
-      </Tile>
-      <Tile
-        label="Risk"
-        value={humanize(assessment.risk_profile.category)}
-        caption={factors === 0 ? "No risk factors noted" : `${factors} risk factor${factors === 1 ? "" : "s"} noted`}
-        tone={RISK_TONE[assessment.risk_profile.category] ?? "slate"}
-      />
-      <Tile
-        label="Credit score"
-        value={
-          creditScore === null ? (
-            "—"
-          ) : (
-            <>
-              {creditScore.toLocaleString()}
-              <span className="text-sm font-normal text-slate-400"> / 1200</span>
-            </>
-          )
-        }
-        caption={creditScore === null ? "No bureau report on file" : "From the credit bureau"}
-      />
-    </div>
-  );
-}
-
-export function NarrativePanel({ text }: { text: string }) {
-  return (
-    <Panel className="h-full">
-      <SectionHeading>
-        <span className="inline-flex items-center gap-2">
-          <IconSparkle className="h-4 w-4 text-indigo-500" />
-          Summary
+    <div className="grid grid-cols-2 border-b border-[#e3e6ea] md:grid-cols-4">
+      <div className="col-span-full flex items-center gap-3 border-b border-[#e3e6ea] p-4">
+        <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[4px] bg-[#1f5fa8] text-[18px] font-semibold text-white">
+          {fmtScore(assessment.overall_score)}
         </span>
-      </SectionHeading>
-      <p className="text-sm leading-6 text-slate-700">{text}</p>
-      <p className="mt-3 text-xs text-slate-400">Generated from the assessment — check it against the figures below.</p>
-    </Panel>
-  );
-}
-
-const SEVERITY_ORDER = { high: 0, medium: 1, low: 2 } as const;
-
-export function AttentionPanel({ assessment }: { assessment: AssessmentReport }) {
-  const conditions = [...assessment.conditions_of_approval].sort((a, b) => Number(b.blocking) - Number(a.blocking));
-  const factors = [...assessment.risk_profile.factors].sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
-
-  return (
-    <Panel className="h-full">
-      <SectionHeading>Before you decide</SectionHeading>
-      {conditions.length === 0 && factors.length === 0 ? (
-        <p className="flex items-center gap-2 text-sm text-emerald-700">
-          <IconCheck className="h-4 w-4" />
-          No conditions or risk factors flagged.
-        </p>
-      ) : (
-        <ul className="space-y-3">
-          {conditions.map((c) => (
-            <li key={c.id} className="flex gap-2.5">
-              <IconAlert className={`mt-0.5 h-4 w-4 shrink-0 ${c.blocking ? "text-red-500" : "text-amber-500"}`} />
-              <div className="min-w-0">
-                <p className="text-sm text-slate-800">{c.text}</p>
-                <p className="mt-0.5 text-xs text-slate-400">
-                  {c.blocking ? "Condition of approval" : "Advisory"} · {c.reason}
-                </p>
-              </div>
-            </li>
-          ))}
-          {factors.map((f, i) => (
-            <li key={i} className="flex gap-2.5">
-              <span
-                className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
-                  f.severity === "high" ? "bg-red-500" : f.severity === "medium" ? "bg-amber-500" : "bg-slate-300"
-                }`}
-              />
-              <div className="min-w-0">
-                <p className="text-sm text-slate-800">{f.label}</p>
-                <p className="mt-0.5 text-xs text-slate-400">
-                  {humanize(f.severity)} risk · {f.detail}
-                </p>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </Panel>
-  );
-}
-
-// ------------------------------------------------------------- assessment --
-
-function FiveCCard({ fiveC, group, weight, completeness }: {
-  fiveC: FiveC;
-  group?: AssessmentGroupScore;
-  weight?: number;
-  completeness?: string;
-}) {
-  const meta = FIVE_C_META[fiveC];
-  const scored = group && group.state === "computed" && group.score !== null;
-
-  return (
-    <div className="flex flex-col rounded-xl border border-slate-200/80 p-4 print:break-inside-avoid">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold text-slate-900">{meta.label}</p>
-          <p className="text-xs text-slate-400">
-            {meta.blurb}
-            {weight !== undefined && ` · ${weight}% of score`}
+        <div className="min-w-0">
+          <p className={ui.label}>Recommendation</p>
+          <p className="text-[14px] font-semibold text-[#1b1e23]">{tier.label}</p>
+          <p className={`text-[12px] ${ui.muted}`}>
+            {humanize(assessment.risk_profile.category)} risk · score {fmtScore(assessment.overall_score)} / 100
           </p>
         </div>
-        <p className={`text-2xl font-semibold tabular-nums ${scored ? TONE_TEXT[scoreTone(group.score!)] : "text-slate-300"}`}>
-          {scored ? group.score!.toFixed(0) : "—"}
-        </p>
       </div>
-
-      {scored ? (
-        <>
-          <div className="mt-3">
-            <ScoreBar score={group.score!} label={`${meta.label} score`} />
-          </div>
-          <dl className="mt-3 space-y-1.5 text-xs">
-            {group.metrics_used.map((m) => (
-              <div key={m.metric} className="flex items-baseline justify-between gap-3">
-                <dt className="text-slate-500">{metricLabel(m.metric)}</dt>
-                <dd className="text-right tabular-nums text-slate-800">{fmtMetric(m.raw_value, m.unit)}</dd>
-              </div>
-            ))}
-            {group.metrics_skipped.map((m) => (
-              <div key={m.metric} className="flex items-baseline justify-between gap-3 text-slate-400">
-                <dt>{metricLabel(m.metric)}</dt>
-                <dd className="text-right italic">{humanize(m.reason)}</dd>
-              </div>
-            ))}
-          </dl>
-        </>
-      ) : (
-        <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
-          {completeness === "not_applicable"
-            ? "Not applicable to this product."
-            : "Not scored — not enough information was provided for this area."}
-        </p>
-      )}
-    </div>
-  );
-}
-
-export function AssessmentPanel({ assessment, chat }: { assessment: AssessmentReport; chat: ChatReport | null }) {
-  const allMetrics = chat?.assessment ? Object.entries(chat.assessment.metrics) : [];
-  const ruleTier = TIER[assessment.rule_based_indicator.tier]?.label ?? humanize(assessment.rule_based_indicator.tier);
-
-  return (
-    <div className="space-y-6">
-      <Panel>
-        <SectionHeading>Five C&apos;s breakdown</SectionHeading>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {FIVE_C_ORDER.map((c) => (
-            <FiveCCard
-              key={c}
-              fiveC={c}
-              group={assessment.group_scores[c]}
-              weight={assessment.weights_applied[c]}
-              completeness={assessment.data_completeness[c]}
-            />
-          ))}
+      <div className="border-b border-r border-[#e3e6ea] p-4 md:border-b-0">
+        <p className={ui.label}>Credit score</p>
+        <p className="mt-1 text-[22px] font-medium tabular-nums text-[#1b1e23]">{creditScore ?? "—"}</p>
+        <p className={`text-[12px] ${ui.muted}`}>Bureau, out of 1,200</p>
+      </div>
+      {cells.map((c) => (
+        <div key={c.label} className="border-r border-[#e3e6ea] p-4 last:border-r-0 [&:nth-child(3)]:border-b md:[&:nth-child(3)]:border-b-0">
+          <p className={ui.label}>{c.label}</p>
+          <p className="mt-1 text-[22px] font-medium tabular-nums text-[#1b1e23]">{c.value}</p>
+          <p className={`text-[12px] ${c.ok ? "text-[#2e844a]" : "text-[#c23934]"}`}>{c.note}</p>
         </div>
-        <p className="mt-4 text-xs text-slate-400">
-          Rule engine cross-check: {ruleTier} ({assessment.rule_based_indicator.fail_count} fail,{" "}
-          {assessment.rule_based_indicator.flag_count} flag, {assessment.rule_based_indicator.provisional_count}{" "}
-          provisional). The weighted score is the recommendation.
-        </p>
-      </Panel>
-
-      <div className="grid grid-cols-1 gap-6 items-start lg:grid-cols-2">
-        {assessment.policy_comparison.length > 0 && (
-          <Panel>
-            <SectionHeading>Policy checks</SectionHeading>
-            <ul className="divide-y divide-slate-100">
-              {assessment.policy_comparison.map((cmp) => (
-                <li key={cmp.metric} className="flex items-start justify-between gap-4 py-2.5 first:pt-0 last:pb-0">
-                  <div className="min-w-0">
-                    <p className="text-sm text-slate-800">{cmp.label}</p>
-                    <p className="text-xs text-slate-400">
-                      {cmp.threshold_label}: {fmtMetric(cmp.threshold, cmp.unit)}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <span className="text-sm font-medium tabular-nums text-slate-900">{fmtMetric(cmp.value, cmp.unit)}</span>
-                    <Badge tone={cmp.meets_threshold ? "emerald" : "red"}>{cmp.meets_threshold ? "Pass" : "Fail"}</Badge>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </Panel>
-        )}
-
-        {assessment.key_figures.length > 0 && (
-          <Panel>
-            <SectionHeading>Key figures</SectionHeading>
-            <dl className="divide-y divide-slate-100">
-              {assessment.key_figures.map((f) => (
-                <div key={f.metric} className="flex items-baseline justify-between gap-4 py-2 text-sm first:pt-0 last:pb-0">
-                  <dt className="text-slate-500">{f.label}</dt>
-                  <dd className="text-right font-medium tabular-nums text-slate-900">{fmtMetric(f.value, f.unit)}</dd>
-                </div>
-              ))}
-            </dl>
-          </Panel>
-        )}
-      </div>
-
-      {allMetrics.length > 0 && (
-        <details className="group rounded-2xl border border-slate-200/80 bg-white shadow-sm shadow-slate-200/50 print:hidden">
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 text-sm font-semibold text-slate-900">
-            All metrics ({allMetrics.length})
-            <span className="text-xs font-normal text-slate-400 group-open:hidden">Show for audit</span>
-            <span className="hidden text-xs font-normal text-slate-400 group-open:inline">Hide</span>
-          </summary>
-          <dl className="grid grid-cols-1 gap-x-8 border-t border-slate-100 px-5 py-4 text-xs md:grid-cols-2">
-            {allMetrics.map(([key, m]) => (
-              <div key={key} className="flex items-baseline justify-between gap-3 border-b border-slate-50 py-1.5">
-                <dt className="text-slate-500">{metricLabel(key)}</dt>
-                <dd className="text-right tabular-nums">
-                  {m.state === "computed" ? (
-                    <span className="text-slate-800">{fmtMetric(m.value, m.unit)}</span>
-                  ) : (
-                    <span className="italic text-slate-400">{humanize(m.state)}</span>
-                  )}
-                </dd>
-              </div>
-            ))}
-          </dl>
-        </details>
-      )}
+      ))}
     </div>
   );
 }
 
-// -------------------------------------------------------------- applicant --
+function Scorecard({ assessment }: { assessment: AssessmentReport }) {
+  const tier = TIER[assessment.tier]?.label ?? humanize(assessment.tier);
+  return (
+    <div className={ui.panel}>
+      <PanelHeader title="Scorecard" aside="Weighted score out of 100" />
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[520px] text-[14px]">
+          <thead>
+            <tr className="border-b border-[#e3e6ea] bg-[#f7f8fa] text-left text-[12px] text-[#5d6470]">
+              <th className="px-4 py-2 font-medium">Factor</th>
+              <th className="px-4 py-2 text-right font-medium">Weight</th>
+              <th className="px-4 py-2 text-right font-medium">Score</th>
+              <th className="w-[40%] px-4 py-2 font-medium">Contribution</th>
+            </tr>
+          </thead>
+          <tbody>
+            {FIVE_C_ORDER.map((c) => {
+              const group = assessment.group_scores[c];
+              const scored = group && group.state === "computed" && group.score !== null;
+              const weight = assessment.weights_applied[c];
+              return (
+                <tr key={c} className="border-b border-[#e3e6ea]">
+                  <td className="px-4 py-2.5 text-[#1b1e23]">{humanize(c)}</td>
+                  <td className={`px-4 py-2.5 text-right tabular-nums ${mono.className} text-[13px] text-[#5d6470]`}>
+                    {weight !== undefined ? `${weight}%` : "—"}
+                  </td>
+                  <td className="px-4 py-2.5 text-right font-semibold tabular-nums text-[#1b1e23]">
+                    {scored ? group.score!.toFixed(0) : "—"}
+                  </td>
+                  <td className="px-4 py-2.5">
+                    {scored ? (
+                      <div className="h-2 w-full bg-[#e5e8ec]">
+                        <div
+                          className={`h-full ${group.score! >= 60 ? "bg-[#1f5fa8]" : "bg-[#c9a227]"}`}
+                          style={{ width: `${Math.min(group.score!, 100)}%` }}
+                        />
+                      </div>
+                    ) : (
+                      <span className={`text-[12px] ${ui.muted}`}>
+                        {assessment.data_completeness[c] === "not_applicable" ? "Not applicable" : "Not scored — insufficient data"}
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+            <tr className="bg-[#f7f8fa] font-semibold">
+              <td className="px-4 py-2.5">Total</td>
+              <td className="px-4 py-2.5 text-right tabular-nums">100%</td>
+              <td className="px-4 py-2.5 text-right tabular-nums">{fmtScore(assessment.overall_score)}</td>
+              <td className="px-4 py-2.5 text-[#1f5fa8]">{tier}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p className={`px-4 py-2.5 text-[12px] ${ui.muted}`}>
+        Rule engine cross-check: {TIER[assessment.rule_based_indicator.tier]?.label ?? humanize(assessment.rule_based_indicator.tier)} —{" "}
+        {assessment.rule_based_indicator.fail_count} fail, {assessment.rule_based_indicator.flag_count} flag,{" "}
+        {assessment.rule_based_indicator.provisional_count} provisional.
+      </p>
+    </div>
+  );
+}
 
-export function ApplicantPanel({ chat }: { chat: ChatReport }) {
+function PolicyChecks({ assessment }: { assessment: AssessmentReport }) {
+  const checks = assessment.policy_comparison;
+  if (checks.length === 0) return null;
+  const exceptions = checks.filter((c) => !c.meets_threshold).length;
+  return (
+    <div className={ui.panel}>
+      <PanelHeader
+        title="Policy checks"
+        aside={`${checks.length - exceptions} pass · ${exceptions} exception${exceptions === 1 ? "" : "s"}`}
+      />
+      <ul>
+        {checks.map((c) => (
+          <li
+            key={c.metric}
+            className={`flex items-center justify-between gap-4 border-b border-[#e3e6ea] px-4 py-2.5 text-[14px] last:border-b-0 ${
+              c.meets_threshold ? "" : "bg-[#fdf6e7]"
+            }`}
+          >
+            <div className="min-w-0">
+              <p className="text-[#1b1e23]">{c.label}</p>
+              <p className={`text-[12px] ${ui.muted}`}>
+                {c.threshold_label}: {fmtMetric(c.threshold, c.unit)} · actual {fmtMetric(c.value, c.unit)}
+              </p>
+            </div>
+            <span className={`shrink-0 font-medium ${c.meets_threshold ? "text-[#2e844a]" : "text-[#8c5a00]"}`}>
+              {c.meets_threshold ? "Pass" : "Exception"}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function KeyFigures({ assessment }: { assessment: AssessmentReport }) {
+  if (assessment.key_figures.length === 0) return null;
+  return (
+    <div className={ui.panel}>
+      <PanelHeader title="Serviceability" />
+      <table className="w-full text-[14px]">
+        <tbody>
+          {assessment.key_figures.map((f) => (
+            <tr key={f.metric} className="border-b border-[#e3e6ea] last:border-b-0">
+              <td className="px-4 py-2 text-[#343a42]">{f.label}</td>
+              <td className="whitespace-nowrap px-4 py-2 text-right tabular-nums text-[#1b1e23]">
+                {fmtMetric(f.value, f.unit)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+export function CreditAssessmentTab({
+  assessment,
+  chat,
+  creditScore,
+}: {
+  assessment: AssessmentReport;
+  chat: ChatReport | null;
+  creditScore: number | null;
+}) {
+  const allMetrics = chat?.assessment ? Object.entries(chat.assessment.metrics) : [];
+  return (
+    <div>
+      <KpiStrip assessment={assessment} creditScore={creditScore} />
+      <div className="space-y-4 p-4">
+        <div className="grid grid-cols-1 items-stretch gap-4 xl:grid-cols-2">
+          <div className={ui.panel}>
+            <PanelHeader title="Five C's profile" aside="Score out of 100" />
+            <div className="p-4">
+              <FiveCRadar assessment={assessment} />
+            </div>
+          </div>
+          <div className={ui.panel}>
+            <PanelHeader title="Monthly budget" aside="After the new repayment" />
+            <div className="p-4">
+              <BudgetWaterfall assessment={assessment} />
+            </div>
+          </div>
+        </div>
+        <Scorecard assessment={assessment} />
+        <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
+          <PolicyChecks assessment={assessment} />
+          <KeyFigures assessment={assessment} />
+        </div>
+      </div>
+      <div className="border-t border-[#e3e6ea]">
+        {FIVE_C_ORDER.map((c) => {
+          const group = assessment.group_scores[c];
+          const rows = [
+            ...(group?.metrics_used ?? []).map((m) => ({ label: metricLabel(m.metric), value: fmtMetric(m.raw_value, m.unit) })),
+            ...(group?.metrics_skipped ?? []).map((m) => ({
+              label: metricLabel(m.metric),
+              value: <span className={`italic ${ui.muted}`}>{humanize(m.reason)}</span>,
+            })),
+          ];
+          return (
+            <Section
+              key={c}
+              title={FIVE_C_LABEL[c]}
+              aside={
+                group?.state === "computed" && group.score !== null ? (
+                  <span className="text-[13px] font-semibold tabular-nums text-[#1b1e23]">{group.score.toFixed(0)}</span>
+                ) : (
+                  <span className={`text-[12px] ${ui.muted}`}>Not scored</span>
+                )
+              }
+            >
+              {rows.length > 0 ? <FieldGrid fields={rows} /> : <p className={`text-[13px] ${ui.muted}`}>No metrics for this factor.</p>}
+            </Section>
+          );
+        })}
+        {allMetrics.length > 0 && (
+          <div className="print:hidden">
+            <Section title={`All metrics (${allMetrics.length}) — audit view`} defaultOpen={false}>
+              <FieldGrid
+                fields={allMetrics.map(([key, m]) => ({
+                  label: metricLabel(key),
+                  value: m.state === "computed" ? fmtMetric(m.value, m.unit) : <span className={`italic ${ui.muted}`}>{humanize(m.state)}</span>,
+                }))}
+              />
+            </Section>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+export function ApplicantTab({ chat }: { chat: ChatReport }) {
   const byGroup = new Map<string, ChatReport["slots"]>();
   for (const slot of chat.slots) {
     const group = slot.group ?? "other";
     byGroup.set(group, [...(byGroup.get(group) ?? []), slot]);
   }
   const groups = [...ANSWER_GROUPS, { id: "other", label: "Other" }].filter((g) => byGroup.has(g.id));
-
-  if (groups.length === 0) {
-    return <Panel><p className="text-sm text-slate-400">No interview answers recorded.</p></Panel>;
-  }
+  if (groups.length === 0) return <p className={`p-4 text-[14px] ${ui.muted}`}>No interview answers recorded.</p>;
 
   return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+    <div>
       {groups.map((g) => (
-        <Panel key={g.id}>
-          <SectionHeading>{g.label}</SectionHeading>
-          <dl className="divide-y divide-slate-100">
-            {byGroup.get(g.id)!.map((s) => (
-              <div key={s.slot_key} className="flex items-baseline justify-between gap-4 py-2 text-sm first:pt-0 last:pb-0">
-                <dt className="text-slate-500">{s.label ?? humanize(s.slot_key)}</dt>
-                <dd className="text-right font-medium text-slate-900">{fmtAnswer(s.value, s.type)}</dd>
-              </div>
-            ))}
-          </dl>
-        </Panel>
+        <Section key={g.id} title={g.label}>
+          <FieldGrid
+            fields={byGroup.get(g.id)!.map((s) => ({ label: s.label ?? humanize(s.slot_key), value: fmtAnswer(s.value, s.type) }))}
+          />
+        </Section>
       ))}
     </div>
   );
 }
 
-// -------------------------------------------------------------- documents --
 
-const DOC_STATUS: Record<string, { label: string; tone: Tone }> = {
-  extracted: { label: "Verified", tone: "emerald" },
-  needs_reupload: { label: "Needs re-upload", tone: "red" },
-  uploaded: { label: "Processing", tone: "slate" },
-};
-
-export function DocumentsPanel({ chat }: { chat: ChatReport }) {
-  if (chat.documents.length === 0) {
-    return (
-      <Panel>
-        <div className="flex flex-col items-center gap-2 py-8 text-center">
-          <IconFile className="h-8 w-8 text-slate-300" />
-          <p className="text-sm text-slate-500">No documents uploaded.</p>
-        </div>
-      </Panel>
-    );
-  }
+export function ConversationTab({ chat }: { chat: ChatReport }) {
+  if (chat.transcript.length === 0) return <p className={`p-4 text-[14px] ${ui.muted}`}>No conversation recorded.</p>;
   return (
-    <Panel>
-      <ul className="divide-y divide-slate-100">
-        {chat.documents.map((d) => {
-          const status = DOC_STATUS[d.status] ?? { label: humanize(d.status), tone: "slate" as Tone };
-          return (
-            <li key={d.document_id} className="py-3 first:pt-0 last:pb-0">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex min-w-0 gap-3">
-                  <IconFile className="mt-0.5 h-5 w-5 shrink-0 text-slate-400" />
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-slate-900">{humanize(d.verification_type)}</p>
-                    <p className="truncate text-xs text-slate-400">
-                      {d.original_filename} · {fmtDateTime(d.uploaded_at)}
-                    </p>
-                  </div>
-                </div>
-                <Badge tone={status.tone}>{status.label}</Badge>
-              </div>
-              {d.verifications.length > 0 && (
-                <dl className="ml-8 mt-2 space-y-1 text-xs">
-                  {d.verifications.map((v, i) => (
-                    <div key={i} className="flex flex-wrap items-baseline gap-x-2">
-                      <dt className="text-slate-500">{humanize(v.slot_id)}:</dt>
-                      <dd className="text-slate-700">
-                        declared {v.declared_value}, document shows {v.extracted_value}{" "}
-                        <span className={v.status === "match" ? "text-emerald-600" : "text-amber-600"}>
-                          ({v.status === "match" ? "matches" : humanize(v.status).toLowerCase()})
-                        </span>
-                      </dd>
-                    </div>
-                  ))}
-                </dl>
-              )}
-            </li>
-          );
-        })}
-      </ul>
-    </Panel>
+    <ol className="divide-y divide-[#e3e6ea]">
+      {chat.transcript.map((m, i) => (
+        <li key={i} className="grid grid-cols-[110px_1fr] gap-4 px-4 py-3 text-[14px]">
+          <div>
+            <p className={`font-medium ${m.role === "user" ? "text-[#1f5fa8]" : "text-[#1b1e23]"}`}>
+              {m.role === "user" ? "Applicant" : "Assistant"}
+            </p>
+            <p className={`text-[12px] ${ui.muted}`}>{fmtDateTime(m.created_at)}</p>
+          </div>
+          <p className="whitespace-pre-wrap text-[#343a42]">{m.content}</p>
+        </li>
+      ))}
+    </ol>
   );
 }
 
-// ----------------------------------------------------------- conversation --
 
-export function ConversationPanel({ chat }: { chat: ChatReport }) {
-  if (chat.transcript.length === 0) {
-    return <Panel><p className="text-sm text-slate-400">No conversation recorded.</p></Panel>;
-  }
+export function RecommendationPanel({ assessment }: { assessment: AssessmentReport }) {
+  const tier = TIER[assessment.tier] ?? { label: humanize(assessment.tier), tone: "slate" as const, hint: "" };
   return (
-    <Panel>
-      <ol className="space-y-3">
-        {chat.transcript.map((m, i) => {
-          const fromApplicant = m.role === "user";
-          return (
-            <li key={i} className={`flex ${fromApplicant ? "justify-end" : "justify-start"}`}>
-              <div className="max-w-[80%]">
-                <p className={`mb-1 text-[11px] text-slate-400 ${fromApplicant ? "text-right" : ""}`}>
-                  {fromApplicant ? "Applicant" : "Assistant"} · {fmtDateTime(m.created_at)}
-                </p>
-                <div
-                  className={`rounded-2xl px-3.5 py-2 text-sm ${
-                    fromApplicant ? "bg-indigo-600 text-white" : "border border-slate-200 bg-slate-50 text-slate-700"
-                  } print:border print:border-slate-300 print:bg-white print:text-slate-800`}
-                >
-                  {m.content}
-                </div>
+    <div className={ui.panel}>
+      <PanelHeader title="Recommendation" aside={<Pill tone={tier.tone}>{tier.label}</Pill>} />
+      {assessment.narrative_summary ? (
+        <p className="px-4 py-3 text-[14px] leading-6 text-[#343a42]">{assessment.narrative_summary}</p>
+      ) : (
+        <div className="space-y-2 px-4 py-4" aria-live="polite">
+          <p className="text-[13px] text-[#5d6470]">Writing summary…</p>
+          <div className="h-2.5 w-full animate-pulse rounded bg-[#e5e8ec]" />
+          <div className="h-2.5 w-11/12 animate-pulse rounded bg-[#e5e8ec]" />
+          <div className="h-2.5 w-3/4 animate-pulse rounded bg-[#e5e8ec]" />
+        </div>
+      )}
+      <p className={`border-t border-[#e3e6ea] px-4 py-2 text-[12px] ${ui.muted}`}>
+        Generated from the assessment · {fmtDateTime(assessment.generated_at)}
+      </p>
+    </div>
+  );
+}
+
+const SEVERITY_ORDER = { high: 0, medium: 1, low: 2 } as const;
+
+export function ConditionsPanel({ assessment }: { assessment: AssessmentReport }) {
+  const conditions = [...assessment.conditions_of_approval].sort((a, b) => Number(b.blocking) - Number(a.blocking));
+  const factors = [...assessment.risk_profile.factors].sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
+  const total = conditions.length + factors.length;
+
+  return (
+    <div className={ui.panel}>
+      <PanelHeader title="Conditions & risk" aside={total === 0 ? "None" : `${total} item${total === 1 ? "" : "s"}`} />
+      {total === 0 ? (
+        <p className="px-4 py-3 text-[14px] text-[#2e844a]">No conditions or risk factors flagged.</p>
+      ) : (
+        <ol>
+          {conditions.map((c, i) => (
+            <li key={c.id} className="flex gap-3 border-b border-[#e3e6ea] px-4 py-2.5 last:border-b-0">
+              <span className={`${mono.className} pt-0.5 text-[12px] text-[#8a909a]`}>{String(i + 1).padStart(2, "0")}</span>
+              <div className="min-w-0 flex-1">
+                <p className="text-[14px] text-[#1b1e23]">{c.text}</p>
+                <p className={`text-[12px] ${ui.muted}`}>{c.reason}</p>
               </div>
+              <span className={`shrink-0 text-[12px] ${c.blocking ? "text-[#c23934]" : "text-[#5d6470]"}`}>
+                {c.blocking ? "Prior to settlement" : "Advisory"}
+              </span>
             </li>
-          );
-        })}
+          ))}
+          {factors.map((f, i) => (
+            <li key={i} className="flex gap-3 border-b border-[#e3e6ea] px-4 py-2.5 last:border-b-0">
+              <span
+                className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
+                  f.severity === "high" ? "bg-[#c23934]" : f.severity === "medium" ? "bg-[#c9a227]" : "bg-[#b0b6bf]"
+                }`}
+              />
+              <div className="min-w-0 flex-1">
+                <p className="text-[14px] text-[#1b1e23]">{f.label}</p>
+                <p className={`text-[12px] ${ui.muted}`}>{f.detail}</p>
+              </div>
+              <span className="shrink-0 text-[12px] text-[#5d6470]">{humanize(f.severity)} risk</span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
+export function ApprovalPanel({
+  application,
+  assessment,
+  chat,
+  onDecide,
+}: {
+  application: LoanApplicationOut | null;
+  assessment: AssessmentReport | null;
+  chat: ChatReport | null;
+  onDecide: () => void;
+}) {
+  const decided = application && application.status !== "under_review" && application.status !== "submitted";
+  const steps: { title: string; detail: string; state: "done" | "current" | "todo" }[] = [
+    {
+      title: "Credit assessment · AI engine",
+      detail: assessment
+        ? `Recommended ${TIER[assessment.tier]?.label.toLowerCase() ?? humanize(assessment.tier)} · ${fmtDate(assessment.generated_at)}`
+        : "Not run yet",
+      state: assessment ? "done" : "todo",
+    },
+    {
+      title: application?.pending_position_title ? `Approver · ${application.pending_position_title}` : "Approver",
+      detail: chat?.decision
+        ? `${statusLabel(chat.decision.outcome)} · ${fmtDate(chat.decision.decided_at)}`
+        : decided
+          ? statusLabel(application!.status)
+          : "Awaiting decision",
+      state: decided || chat?.decision ? "done" : "current",
+    },
+  ];
+
+  return (
+    <div className={ui.panel}>
+      <PanelHeader title="Approval" />
+      <ol className="space-y-4 px-4 py-3">
+        {steps.map((s, i) => (
+          <li key={s.title} className="flex gap-3">
+            <span
+              className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold ${
+                s.state === "done"
+                  ? "bg-[#2e844a] text-white"
+                  : s.state === "current"
+                    ? "border-2 border-[#1f5fa8] text-[#1f5fa8]"
+                    : "border border-[#cfd3d9] text-[#8a909a]"
+              }`}
+            >
+              {s.state === "done" ? "✓" : i + 1}
+            </span>
+            <div className="min-w-0">
+              <p className="text-[14px] font-medium text-[#1b1e23]">{s.title}</p>
+              <p className={`text-[12px] ${s.state === "current" ? "text-[#1f5fa8]" : ui.muted}`}>{s.detail}</p>
+            </div>
+          </li>
+        ))}
       </ol>
-    </Panel>
+      {chat?.decision?.reasoning && (
+        <p className="border-t border-[#e3e6ea] px-4 py-3 text-[13px] text-[#343a42]">&ldquo;{chat.decision.reasoning}&rdquo;</p>
+      )}
+      {application?.status === "under_review" && (
+        <div className="border-t border-[#e3e6ea] p-4 print:hidden">
+          <button type="button" onClick={onDecide} className={`${ui.brandButton} w-full`}>
+            Record decision
+          </button>
+        </div>
+      )}
+    </div>
   );
 }

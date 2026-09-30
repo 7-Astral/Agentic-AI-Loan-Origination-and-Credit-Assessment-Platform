@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -101,10 +101,7 @@ async def update_bank_staff(
     actor: User = Depends(require_bank_permission("can_manage_staff")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Edit a staff member's name and/or position. Not for activation state —
-    use the deactivate/reactivate routes for that — and there's deliberately
-    no DELETE: a staff record stays around (deactivated) so past decisions,
-    escalations and audit entries it's tied to still resolve to someone."""
+   
     target = await db.get(User, staff_id)
     if target is None or target.role != UserRole.STAFF.value or target.bank_id != actor.bank_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Staff member not found")
@@ -205,9 +202,7 @@ async def create_bank_product(
     actor: User = Depends(require_bank_permission("can_manage_products")),
     db: AsyncSession = Depends(get_db),
 ):
-    # product_code is NOT NULL + unique at the DB level (see migration
-    # 0f8bc6a836fe), so it must be set on the INSERT itself — generate the
-    # id ourselves up front instead of relying on a post-flush id.
+  
     product_id = uuid.uuid4()
     product = LoanProduct(
         id=product_id,
@@ -271,10 +266,7 @@ async def deactivate_bank_product(
     actor: User = Depends(require_bank_permission("can_manage_products")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Products are never hard-deleted — past applications and lending
-    policies reference them, and the chat agent's catalog client reads them
-    by code. Deactivating just hides a product from new applications (see
-    core-banking's product listing, which already filters on is_active)."""
+   
     product = await db.get(LoanProduct, product_id)
     if product is None or product.bank_id != actor.bank_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
@@ -403,10 +395,7 @@ async def deactivate_bank_policy(
     actor: User = Depends(require_bank_permission("can_manage_products")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Policies are never hard-deleted — see _applicable_policy in
-    app.core.lending_logic, which now only considers is_active policies, so
-    deactivating one immediately stops it from governing new decisions
-    without losing the historical record of what it was."""
+    
     policy = await db.get(LendingPolicy, policy_id)
     if policy is None or policy.bank_id != actor.bank_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Policy not found")
@@ -476,10 +465,16 @@ async def list_bank_applications(staff: User = Depends(get_current_staff), db: A
     )
     applicant_by_id = {u.id: u for u in applicants_result.scalars().all()}
 
+    products_result = await db.execute(
+        select(LoanProduct.id, LoanProduct.name).where(LoanProduct.id.in_({a.product_id for a in applications}))
+    )
+    product_name_by_id = dict(products_result.all())
+
     out = []
     for app in applications:
         item = LoanApplicationOut.model_validate(app)
         item.pending_position_title = position_by_app.get(app.id)
+        item.product_name = product_name_by_id.get(app.product_id)
         applicant = applicant_by_id.get(app.applicant_id)
         if applicant:
             item.applicant_name = applicant.full_name
@@ -495,11 +490,7 @@ async def decide_loan_application(
     staff: User = Depends(get_current_staff),
     db: AsyncSession = Depends(get_db),
 ):
-    """A staff member's manual approve/reject on an escalated application —
-    the human-review step at the end of route_loan_decision's ladder (see
-    app.core.lending_logic). Works the same for a chat-originated
-    application as for the plain form: both land in loan_applications and
-    go through the same escalation, so there's nothing chat-specific here."""
+    
     if payload.decision not in ("approved", "rejected"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="decision must be 'approved' or 'rejected'")
 
@@ -519,9 +510,7 @@ async def decide_loan_application(
     )
     escalation = esc_result.scalar_one_or_none()
 
-    # Only the position this was escalated to may act on it — unless the
-    # acting staff member holds a position with unlimited approval authority
-    # (max_approval_amount is None), which can act at any rung below it.
+    
     if escalation and escalation.escalated_to_position_id and staff.position_id != escalation.escalated_to_position_id:
         staff_position = await db.get(BankPosition, staff.position_id) if staff.position_id else None
         if staff_position is None or staff_position.max_approval_amount is not None:
@@ -586,12 +575,9 @@ async def decide_loan_application(
 
 
 async def _fetch_chat_session_resource(
-    application_id: uuid.UUID, staff: User, db: AsyncSession, resource: str
-) -> dict:
-    """Fetches `resource` for the chat session behind a chat-originated
-    application from the chat-agent backend — only for staff at the owning
-    bank, and only for applications that came in through the chat
-    assistant."""
+    application_id: uuid.UUID, staff: User, db: AsyncSession, resource: str, raw: bool = False
+) -> dict | Response:
+   
     application = await db.get(LoanApplication, application_id)
     if application is None or application.bank_id != staff.bank_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
@@ -608,7 +594,6 @@ async def _fetch_chat_session_resource(
         resp.raise_for_status()
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code == status.HTTP_409_CONFLICT:
-            # e.g. "No assessment available for this application yet"
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.response.json().get("detail"))
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -620,6 +605,8 @@ async def _fetch_chat_session_resource(
             detail="Chat assistant service is unavailable",
         ) from exc
 
+    if raw:
+        return Response(content=resp.content, media_type=resp.headers.get("content-type", "application/octet-stream"))
     return resp.json()
 
 
@@ -641,20 +628,34 @@ async def get_application_assessment_report(
     staff: User = Depends(get_current_staff),
     db: AsyncSession = Depends(get_db),
 ):
-    """The scored Five C's assessment report (group scores, overall score,
-    narrative, risk profile, policy comparison, conditions of approval)
-    behind a chat-originated application."""
+   
     return await _fetch_chat_session_resource(application_id, staff, db, "report")
+
+
+@router.get("/loan-applications/{application_id}/assessment-report/narrative")
+async def get_application_assessment_narrative(
+    application_id: uuid.UUID,
+    staff: User = Depends(get_current_staff),
+    db: AsyncSession = Depends(get_db),
+):
+   
+    return await _fetch_chat_session_resource(application_id, staff, db, "report/narrative")
+
+
+@router.get("/loan-applications/{application_id}/documents/{document_id}/file")
+async def get_application_document_file(
+    application_id: uuid.UUID,
+    document_id: uuid.UUID,
+    staff: User = Depends(get_current_staff),
+    db: AsyncSession = Depends(get_db),
+):
+   
+    return await _fetch_chat_session_resource(application_id, staff, db, f"documents/{document_id}/file", raw=True)
 
 
 @router.get("/audit-logs", response_model=list[AuditLogOut])
 async def list_bank_audit_logs(staff: User = Depends(require_bank_manager), db: AsyncSession = Depends(get_db)):
-    """A bank manager's view of their own bank's activity — staff added or
-    changed, products/policies created or (de)activated, applications
-    decided or submitted. Manager-only (require_bank_manager: needs both
-    can_manage_staff and can_manage_products), unlike Team/Products/Policies
-    which each only need one of those flags — this surfaces everything, so
-    it's gated on holding full authority, not partial."""
+   
     result = await db.execute(
         select(AuditLog).where(AuditLog.bank_id == staff.bank_id).order_by(AuditLog.created_at.desc()).limit(200)
     )

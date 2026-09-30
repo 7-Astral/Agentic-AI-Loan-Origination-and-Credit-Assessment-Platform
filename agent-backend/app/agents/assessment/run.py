@@ -152,7 +152,7 @@ async def run_retail_assessment(interview_graph, interview_config: dict, db: Asy
 
     app_id = uuid.UUID(session_id)
     prior = await get_latest_assessment(db, app_id)
-    narrative_summary = await get_or_generate_narrative(
+    narrative_summary, narrative_ai = await get_or_generate_narrative(
         score_report, assessment["product"],
         prior.overall_score if prior else None, prior.narrative_summary if prior else None,
     )
@@ -173,6 +173,7 @@ async def run_retail_assessment(interview_graph, interview_config: dict, db: Asy
         "score_report": score_report,
         "conditions_of_approval": assessment["conditions_of_approval"],
         "narrative_summary": narrative_summary,
+        "narrative_ai_generated": narrative_ai,
         "risk_profile": risk_profile,
         **extras,
     }

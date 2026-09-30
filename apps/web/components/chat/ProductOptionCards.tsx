@@ -1,14 +1,6 @@
 import type { ProductOption } from "@/lib/agent-api";
-import { Badge } from "@/components/ui/Badge";
 
-/**
- * Renders the loan products the assistant is presenting (discovery's
- * product_selection turn) as cards instead of a bulleted wall of text.
- * `interactive` gates whether the Select buttons actually work — only the
- * most recent agent turn should be clickable; once the conversation has
- * moved on, older product cards stay visible as a record of what was
- * offered but no longer do anything if clicked.
- */
+
 
 function fmtAmount(x: number) {
   return `$${Math.round(x).toLocaleString()}`;
@@ -30,17 +22,19 @@ export function ProductOptionCards({
   onSelect: (product: ProductOption) => void;
 }) {
   return (
-    <div className="mt-2 grid max-w-2xl gap-2.5 sm:grid-cols-2">
+    <div className="mt-3 grid max-w-2xl gap-3 sm:grid-cols-2">
       {products.map((p) => (
         <div
           key={p.product_code}
-          className="flex flex-col rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm shadow-slate-200/40"
+          className="flex flex-col rounded-lg border border-slate-200 bg-white p-4 transition-colors hover:border-[#0F6E56]/60"
         >
-          <p className="text-sm font-semibold text-slate-900">{p.name}</p>
+          <p className="font-semibold text-slate-900">{p.name}</p>
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-            <Badge tone="indigo">{rateLabel(p)}</Badge>
+            <span className="inline-flex items-center rounded-full bg-[#e6f2ee] px-2.5 py-0.5 text-xs font-semibold text-[#0F6E56]">
+              {rateLabel(p)}
+            </span>
           </div>
-          <dl className="mt-2.5 space-y-1 text-xs text-slate-500">
+          <dl className="mt-3 space-y-1 text-sm text-slate-500">
             <div className="flex justify-between gap-2">
               <dt>Amount</dt>
               <dd className="font-medium text-slate-700">
@@ -70,7 +64,7 @@ export function ProductOptionCards({
             type="button"
             disabled={!interactive}
             onClick={() => onSelect(p)}
-            className="mt-3 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-700 transition-colors hover:border-indigo-300 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-indigo-50"
+            className="mt-4 rounded-md bg-[#0F6E56] px-3 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-[#0c5a46] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-[#0F6E56]"
           >
             Select
           </button>

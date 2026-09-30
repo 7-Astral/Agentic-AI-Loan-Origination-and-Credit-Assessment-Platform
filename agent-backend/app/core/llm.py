@@ -8,15 +8,17 @@ AGENTS = ("interaction", "document", "assessment", "decision")
 
 
 @lru_cache
-def get_llm(agent: str) -> ChatGoogleGenerativeAI:
+def get_llm(agent: str, max_retries: int | None = None) -> ChatGoogleGenerativeAI:
     settings = get_settings()
     if not settings.gemini_api_key:
         raise RuntimeError("GEMINI_API_KEY is not set in .env")
 
+    extra = {} if max_retries is None else {"max_retries": max_retries}
     return ChatGoogleGenerativeAI(
         model=settings.model_for(agent),
         google_api_key=settings.gemini_api_key,
         timeout=60,
+        **extra,
     )
 
 

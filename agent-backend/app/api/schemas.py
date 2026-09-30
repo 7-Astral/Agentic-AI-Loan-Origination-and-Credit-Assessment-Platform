@@ -6,10 +6,8 @@ from pydantic import BaseModel, Field
 
 class StartRequest(BaseModel):
     product_code: str | None = None
-    # bank whose catalog this session should use — falls back to
-    # settings.platform_bank_id when the caller doesn't specify one
+
     bank_id: str | None = None
-    # product_code: str = Field(default="VL-NEW-020")
 
 
 class SlotHint(BaseModel):
@@ -31,10 +29,6 @@ class MessageRequest(BaseModel):
 
 
 class ProductOption(BaseModel):
-    """One product on offer during the discovery stage's product_selection
-    turn — the same fields discovery.py's _product_brief pulls off the
-    catalog. Sent alongside `question` so the frontend can render each
-    option as its own card instead of parsing them back out of chat text."""
 
     product_code: str
     name: str
@@ -66,9 +60,17 @@ class TurnResponse(BaseModel):
     complete: bool
     escalated: bool = False
     product_code: str | None = None
-    # Populated only on a discovery "product_selection" turn — the products
-    # the applicant is choosing between, for the frontend to render as cards.
     products: list[ProductOption] | None = None
+
+
+class ChatMessageOut(BaseModel):
+    role: str
+    content: str
+
+
+class ResumeResponse(TurnResponse):
+
+    messages: list[ChatMessageOut] = []
 
 
 class DecisionRequest(BaseModel):
@@ -203,7 +205,7 @@ class ApplicationReportOut(BaseModel):
     rule_based_indicator: RuleBasedIndicatorOut
     metrics_computed: int
     metrics_total: int
-    narrative_summary: str
+    narrative_summary: str | None = None
     risk_profile: RiskProfileOut
     applicant_summary: list[ApplicantFactOut] = []
     key_figures: list[KeyFigureOut] = []

@@ -58,8 +58,8 @@ export default function AdminOverview() {
         <h2 className="text-sm font-semibold text-slate-900">Getting started</h2>
         <p className="mt-1 text-sm text-slate-500">
           Add bank staff from the <span className="font-medium text-slate-700">Users</span> page, review
-          product terms under <span className="font-medium text-slate-700">Products</span>, and tune
-          auto-approval thresholds in <span className="font-medium text-slate-700">Policies</span>. Every
+          product terms under <span className="font-medium text-slate-700">Products</span>, and set lending
+          rules in <span className="font-medium text-slate-700">Policies</span>. Every
           admin action here is recorded in the <span className="font-medium text-slate-700">Audit</span> log.
         </p>
       </Card>

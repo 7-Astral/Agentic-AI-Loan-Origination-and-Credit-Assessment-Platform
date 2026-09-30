@@ -62,14 +62,28 @@ async def ensure_application(
         await db.commit()
 
 
+async def latest_open_session(applicant_id: str) -> str | None:
+    async with async_session() as db:
+        result = await db.execute(
+            select(Application.id)
+            .where(
+                Application.applicant_id == uuid.UUID(applicant_id),
+                Application.platform_application_id.is_(None),
+                Application.status.notin_(("approved", "declined", "withdrawn")),
+            )
+            .order_by(Application.updated_at.desc())
+            .limit(1)
+        )
+        found = result.scalar_one_or_none()
+        return str(found) if found else None
+
+
 async def get_applicant_id(session_id: str) -> str | None:
     async with async_session() as db:
         application = await db.get(Application, uuid.UUID(session_id))
         return str(application.applicant_id) if application and application.applicant_id else None
 
 
-# The main platform's LoanStatus values, translated into this service's own
-# STATUS_ORDER vocabulary (see app.models.application.STATUS_ORDER).
 PLATFORM_STATUS_TO_LOCAL = {
     "submitted": "assessment",
     "under_review": "underwriter_review",
@@ -104,15 +118,15 @@ async def set_application_product(session_id: str, product_code: str) -> None:
         await db.commit()
 
 
-async def mirror_transcript(session_id: str, transcript: list[dict], turn: int | None = None) -> None:
-    """Inserts only the new tail of `transcript` beyond what's already mirrored —
-    the snapshot's transcript is always the full accumulated list (append-reducer)."""
+async def mirror_transcript(
+    session_id: str, transcript: list[dict], turn: int | None = None, offset: int = 0
+) -> None:
     app_id = uuid.UUID(session_id)
     async with async_session() as db:
         existing_count = await db.scalar(
             select(func.count()).select_from(Message).where(Message.application_id == app_id)
         )
-        for entry in transcript[existing_count:]:
+        for entry in transcript[max(existing_count - offset, 0):]:
             db.add(Message(
                 application_id=app_id,
                 role=entry.get("role", ""),
@@ -122,12 +136,12 @@ async def mirror_transcript(session_id: str, transcript: list[dict], turn: int |
         await db.commit()
 
 
-async def mirror_turn(session_id: str, values: dict[str, Any], complete: bool) -> None:
+async def mirror_turn(session_id: str, values: dict[str, Any], complete: bool, transcript_offset: int = 0) -> None:
     app_id = uuid.UUID(session_id)
     filled = values.get("filled") or {}
     provenance = values.get("provenance") or {}
 
-    await mirror_transcript(session_id, values.get("transcript") or [], values.get("turn"))
+    await mirror_transcript(session_id, values.get("transcript") or [], values.get("turn"), offset=transcript_offset)
 
     async with async_session() as db:
         for slot_key, value in filled.items():
@@ -192,7 +206,7 @@ async def record_assessment(session_id: str, product_code: str, result: dict[str
             tier=score_report.get("tier"),
             data_completeness=score_report.get("data_completeness"),
             conditions_of_approval=result.get("conditions_of_approval"),
-            narrative_summary=result.get("narrative_summary"),
+            narrative_summary=result.get("narrative_summary") if result.get("narrative_ai_generated") else None,
             narrative_summary_score=score_report.get("overall_score"),
         ))
         application.status = _advance(application.status, "assessment")

@@ -54,10 +54,11 @@ LIABILITIES = [
     ),
     slot(
         "mortgage_repayment_monthly", "Mortgage repayment per month", 4, "currency",
-        "Normalise to monthly whatever frequency they give",
+        "Whatever frequency they pay it",
         required_when=HAS_MORTGAGE,
         validation={"min": 0},
         group="liabilities",
+        per_month=True,
     ),
     slot(
         "credit_card_limit_total", "Total credit card limits", 4, "currency",
@@ -79,6 +80,7 @@ LIABILITIES = [
         validation={"min": 0},
         regulatory_basis="Serviceability assessment",
         group="liabilities",
+        per_month=True,
     ),
     slot(
         "has_hecs_help", "Has HECS or HELP debt", 4, "boolean",
@@ -104,33 +106,33 @@ LIABILITIES = [
 # Two rules attach to every one of these: enter 0 for anything not paid,
 # and where an expense is shared, include only their own contribution,
 # counting each expense exactly once.
-_EXPENSE_RULE = "Monthly, own contribution only, 0 if not applicable"
+_EXPENSE_RULE = "Own contribution only, 0 if not applicable — any frequency they like"
 
 EXPENSES = [
     slot("exp_food_groceries", "Food and groceries", 4, "currency",
-         _EXPENSE_RULE, validation={"min": 0}, group="expenses",
+         _EXPENSE_RULE, validation={"min": 0}, group="expenses", per_month=True,
          regulatory_basis="Expense benchmarking"),
     slot("exp_clothing_personal_care", "Clothing and personal care", 4, "currency",
-         _EXPENSE_RULE, validation={"min": 0}, group="expenses"),
+         _EXPENSE_RULE, validation={"min": 0}, group="expenses", per_month=True),
     slot("exp_recreation_holidays", "Recreation and holidays", 4, "currency",
-         _EXPENSE_RULE, validation={"min": 0}, group="expenses"),
+         _EXPENSE_RULE, validation={"min": 0}, group="expenses", per_month=True),
     slot("exp_education_childcare", "Education, childcare and dependants", 4, "currency",
-         _EXPENSE_RULE, validation={"min": 0}, group="expenses"),
+         _EXPENSE_RULE, validation={"min": 0}, group="expenses", per_month=True),
     slot("exp_insurance", "Insurance", 4, "currency",
-         _EXPENSE_RULE, validation={"min": 0}, group="expenses"),
+         _EXPENSE_RULE, validation={"min": 0}, group="expenses", per_month=True),
     slot("exp_medical_health", "Medical and health", 4, "currency",
-         _EXPENSE_RULE, validation={"min": 0}, group="expenses"),
+         _EXPENSE_RULE, validation={"min": 0}, group="expenses", per_month=True),
     slot("exp_rent_board", "Rent or board", 4, "currency",
-         "Only when renting or boarding; their share",
-         required_when=RENTS_OR_BOARDS, validation={"min": 0}, group="expenses"),
+         "Only when renting or boarding; their share, at whatever frequency they pay",
+         required_when=RENTS_OR_BOARDS, validation={"min": 0}, group="expenses", per_month=True),
     slot("exp_other_housing", "Other housing costs", 4, "currency",
          "Rates, strata, utilities, maintenance — excluding mortgage",
-         validation={"min": 0}, group="expenses"),
+         validation={"min": 0}, group="expenses", per_month=True),
     slot("exp_phone_internet_media", "Phone, internet and media", 4, "currency",
-         _EXPENSE_RULE, validation={"min": 0}, group="expenses"),
+         _EXPENSE_RULE, validation={"min": 0}, group="expenses", per_month=True),
     slot("exp_vehicle_transport", "Vehicle and transport", 4, "currency",
          "Fuel, registration, servicing, public transport — not loan repayments",
-         validation={"min": 0}, group="expenses"),
+         validation={"min": 0}, group="expenses", per_month=True),
 ]
 
 # Phase 6 — verification and consent

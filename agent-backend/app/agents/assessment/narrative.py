@@ -1,4 +1,6 @@
 import asyncio
+import logging
+import time
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -16,6 +18,17 @@ one specific number that explains why. Do not invent any figure not given to
 you. Do not recommend an action beyond what the tier already implies."""
 
 TIMEOUT_SECONDS = 8
+QUOTA_BACKOFF_SECONDS = 300
+_quiet_until = 0.0
+
+logger = logging.getLogger(__name__)
+
+
+LEGACY_TEMPLATE_NOTE = "This is a summary — the AI narrative was unavailable when this report was generated."
+
+
+def is_template(text: str | None) -> bool:
+    return bool(text) and text.rstrip().endswith(LEGACY_TEMPLATE_NOTE)
 
 
 def _template_narrative(score_report: dict, product_name: str | None) -> str:
@@ -37,12 +50,11 @@ def _template_narrative(score_report: dict, product_name: str | None) -> str:
         f"Overall weighted score {score_report['overall_score']}/100{product_text}, "
         f"recommended tier: {tier_text}. {best.capitalize()} was the strongest area at "
         f"{computed[best]:.0f}/100, while {worst.capitalize()} was the weakest at "
-        f"{computed[worst]:.0f}/100. This is a template summary — the AI narrative "
-        f"was unavailable when this report was generated."
+        f"{computed[worst]:.0f}/100."
     )
 
 
-async def generate_narrative(score_report: dict, product: dict[str, Any] | None) -> str:
+async def generate_narrative(score_report: dict, product: dict[str, Any] | None) -> tuple[str, bool]:
     product_name = (product or {}).get("name")
     payload = {
         "product": product_name,
@@ -54,8 +66,12 @@ async def generate_narrative(score_report: dict, product: dict[str, Any] | None)
         "data_completeness": score_report["data_completeness"],
     }
 
+    global _quiet_until
+    if time.monotonic() < _quiet_until:
+        return _template_narrative(score_report, product_name), False
+
     try:
-        llm = get_llm("assessment")
+        llm = get_llm("assessment", max_retries=1)
         messages = [
             SystemMessage(content=SYSTEM),
             HumanMessage(content=str(payload)),
@@ -63,17 +79,23 @@ async def generate_narrative(score_report: dict, product: dict[str, Any] | None)
         resp = await asyncio.wait_for(llm.ainvoke(messages), timeout=TIMEOUT_SECONDS)
         text = as_text(resp)
         if text:
-            return text
-    except Exception:
-        pass
+            return text, True
+        logger.warning("Narrative model returned no text; using the template summary")
+    except asyncio.TimeoutError:
+        logger.warning("Narrative model timed out after %ss; using the template summary", TIMEOUT_SECONDS)
+    except Exception as exc:
+        if "RESOURCE_EXHAUSTED" in str(exc) or "429" in str(exc):
+            _quiet_until = time.monotonic() + QUOTA_BACKOFF_SECONDS
+        logger.warning("Narrative model failed (%s: %s); using the template summary", type(exc).__name__, str(exc)[:200])
 
-    return _template_narrative(score_report, product_name)
+    return _template_narrative(score_report, product_name), False
 
 
 async def get_or_generate_narrative(
     score_report: dict, product: dict[str, Any] | None,
     prior_overall_score: float | None, prior_narrative: str | None,
-) -> str:
-    if prior_narrative and prior_overall_score is not None and prior_overall_score == score_report["overall_score"]:
-        return prior_narrative
+) -> tuple[str, bool]:
+    reusable = prior_narrative and not is_template(prior_narrative)
+    if reusable and prior_overall_score is not None and prior_overall_score == score_report["overall_score"]:
+        return prior_narrative, True
     return await generate_narrative(score_report, product)

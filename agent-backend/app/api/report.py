@@ -1,30 +1,51 @@
-"""Staff-facing report for a chat-originated application: everything the
-interview, Five C's assessment, and document verification produced, in one
-payload. Server-to-server only — called by services/api's
-GET /bank/loan-applications/{id}/chat-report proxy (see require_service_api_key
-in app.core.service_auth), never directly by the staff frontend, so a bank's
-own staff auth/scoping stays entirely services/api's responsibility.
-
-Served at /chat-report rather than /report: /report is the assessment
-report in app.api.assessment (scores, narrative, risk profile).
-"""
-
 import uuid
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.document.reconcile import RECONCILIATION_RULES
+from app.agents.document.sample_docs import SAMPLES, load_layout, sample_file
 from app.core.db import get_session
 from app.core.service_auth import require_service_api_key
 from app.models.application import Application, ApplicationSlot, AssessmentResult, Decision, Message
 from app.models.documents import Document, DocumentExtraction, VerificationResult
 from app.services.core_banking import core_banking
+from app.services.storage import storage
 
 router = APIRouter(
     prefix="/api/v1/applications", tags=["report"], dependencies=[Depends(require_service_api_key)]
 )
+
+
+def _extracted_field(verification_type: str, slot_id: str) -> str | None:
+    rule = next((r for r in RECONCILIATION_RULES.get(verification_type, []) if r["slot_id"] == slot_id), None)
+    return rule["extracted_field"] if rule else None
+
+
+
+_SAMPLE_LAYOUTS = {sample_file(s).as_posix(): s for s in SAMPLES}
+
+
+def _sample_layout(storage_path: str) -> dict | None:
+    sample = next((s for path, s in _SAMPLE_LAYOUTS.items() if path.endswith(storage_path.replace("\\", "/"))), None)
+    return load_layout(sample) if sample else None
+
+
+@router.get("/{session_id}/documents/{document_id}/file")
+async def get_document_file(session_id: str, document_id: str, db: AsyncSession = Depends(get_session)):
+    try:
+        document = await db.get(Document, uuid.UUID(document_id))
+    except ValueError:
+        raise HTTPException(404, "Unknown document")
+    if document is None or str(document.application_id) != session_id:
+        raise HTTPException(404, "Unknown document")
+    try:
+        content = await storage.read(document.storage_path)
+    except FileNotFoundError:
+        raise HTTPException(404, "Document file is no longer available")
+    return Response(content=content, media_type=document.content_type)
 
 
 @router.get("/{session_id}/chat-report")
@@ -49,8 +70,7 @@ async def get_application_report(session_id: str, db: AsyncSession = Depends(get
     slots_result = await db.execute(
         select(ApplicationSlot).where(ApplicationSlot.application_id == app_id).order_by(ApplicationSlot.slot_key)
     )
-    # Label, group and type come from the product's interview schema so the
-    # report can show "Food and groceries: $600" rather than raw slot keys.
+
     schema_slots: dict[str, dict] = {}
     if application.product_code:
         try:
@@ -97,6 +117,7 @@ async def get_application_report(session_id: str, db: AsyncSession = Depends(get
     )
     documents_list = docs_result.scalars().all()
     doc_ids = [d.id for d in documents_list]
+    documents_by_id = {d.id: d for d in documents_list}
 
     extractions_by_doc: dict = {}
     if doc_ids:
@@ -113,6 +134,7 @@ async def get_application_report(session_id: str, db: AsyncSession = Depends(get
             verifications_by_doc.setdefault(vr.document_id, []).append(
                 {
                     "slot_id": vr.slot_id,
+                    "extracted_field": _extracted_field(documents_by_id[vr.document_id].verification_type, vr.slot_id),
                     "declared_value": vr.declared_value,
                     "extracted_value": vr.extracted_value,
                     "status": vr.status,
@@ -136,6 +158,7 @@ async def get_application_report(session_id: str, db: AsyncSession = Depends(get
                     else None
                 ),
                 "verifications": verifications_by_doc.get(d.id, []),
+                "layout": _sample_layout(d.storage_path),
             }
         )
 

@@ -24,11 +24,6 @@ class CreateBankStaffRequest(BaseModel):
 
 
 class UpdateBankStaffRequest(BaseModel):
-    """Partial update — only fields the client actually sent are applied
-    (see the route's use of model_dump(exclude_unset=True)). Email and
-    password aren't editable here; activation state is handled by the
-    dedicated deactivate/reactivate routes, not this one."""
-
     full_name: str | None = None
     position_id: uuid.UUID | None = None
 
@@ -45,11 +40,6 @@ class CreateLoanProductRequest(BaseModel):
 
 
 class UpdateLoanProductRequest(BaseModel):
-    """Partial update — every field optional, only what's sent is applied.
-    is_active is handled by the deactivate/reactivate routes instead, since
-    products are never hard-deleted (they're referenced by past
-    applications and by the chat agent's catalog)."""
-
     product_type: str | None = None
     name: str | None = None
     min_amount: float | None = None
@@ -68,10 +58,6 @@ class CreateLendingPolicyRequest(BaseModel):
 
 
 class UpdateLendingPolicyRequest(BaseModel):
-    """Partial update — every field optional, only what's sent is applied.
-    product_id may legitimately be set to null (bank-wide default), which
-    exclude_unset=True still distinguishes from "not sent"."""
-
     product_id: uuid.UUID | None = None
     auto_approval_max_amount: float | None = None
     min_credit_score: int | None = None
@@ -92,14 +78,16 @@ class LoanApplicationOut(BaseModel):
     created_at: datetime
     pending_position_title: str | None = None
     chat_session_id: str | None = None
+    tenure_requested_months: int | None = None
+    product_name: str | None = None
+    applicant_legal_name: str | None = None
+    assessment_tier: str | None = None
+    assessment_score: float | None = None
 
     model_config = {"from_attributes": True}
 
 
 class ApplicationDecisionRequest(BaseModel):
-    """A staff member's manual call on an escalated application — approve or
-    reject. Distinct from the automatic route_loan_decision routing: this is
-    always decision_type='manual', decided_by the acting staff member."""
 
     decision: str  # "approved" | "rejected"
     reason: str | None = None

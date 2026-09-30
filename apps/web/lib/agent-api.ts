@@ -1,11 +1,8 @@
-// Client for the chat-agent backend (agent-backend), a separate service from
-// the main platform API (see lib/api.ts). It speaks its own REST contract —
-// discovery/interview turns, document upload, assessment, and a final
-// "submit" call that hands the completed interview into the main platform's
-// real loan pipeline (see services/api's /api/v1/applications endpoint).
+
 import { handleExpiredSession } from "./session";
 
-const AGENT_API_URL = process.env.NEXT_PUBLIC_AGENT_API_URL || "http://localhost:8001";
+const AGENT_API_URL =
+  process.env.NEXT_PUBLIC_AGENT_API_URL || "http://localhost:8001";
 
 export interface SlotHint {
   id: string;
@@ -46,12 +43,15 @@ export interface TurnResponse {
   products?: ProductOption[] | null;
 }
 
+export interface ResumeResponse extends TurnResponse {
+  messages: { role: string; content: string }[];
+}
+
 export interface RequiredDocument {
   code: string;
   name: string;
   status: string;
   document_id: string | null;
-  verification: "match" | "mismatch" | null;
 }
 
 export interface UploadDocumentResult {
@@ -93,7 +93,11 @@ export class AgentApiError extends Error {
   }
 }
 
-async function request<T>(path: string, options: RequestInit = {}, token?: string | null): Promise<T> {
+async function request<T>(
+  path: string,
+  options: RequestInit = {},
+  token?: string | null,
+): Promise<T> {
   const headers: Record<string, string> = {
     ...(options.headers as Record<string, string> | undefined),
   };
@@ -102,7 +106,11 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
   }
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const res = await fetch(`${AGENT_API_URL}${path}`, { ...options, headers, cache: "no-store" });
+  const res = await fetch(`${AGENT_API_URL}${path}`, {
+    ...options,
+    headers,
+    cache: "no-store",
+  });
 
   if (!res.ok) {
     let detail = res.statusText;
@@ -112,10 +120,12 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
     } catch {
       /* ignore parse errors */
     }
-    // Same JWT, same "Invalid or expired token" as services/api — see
-    // agent-backend's app/core/identity.get_customer_id_from_token.
+   
     if (res.status === 401 && token) handleExpiredSession();
-    throw new AgentApiError(res.status, typeof detail === "string" ? detail : res.statusText);
+    throw new AgentApiError(
+      res.status,
+      typeof detail === "string" ? detail : res.statusText,
+    );
   }
   if (res.status === 204) return undefined as T;
   return res.json();
@@ -123,48 +133,75 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
 
 export const agentApi = {
   start: (token: string | null, bankId?: string) =>
-    request<TurnResponse>("/api/v1/applications", { method: "POST", body: JSON.stringify({ bank_id: bankId }) }, token),
+    request<TurnResponse>(
+      "/api/v1/applications",
+      { method: "POST", body: JSON.stringify({ bank_id: bankId }) },
+      token,
+    ),
 
   sendMessage: (token: string | null, sessionId: string, message: string) =>
     request<TurnResponse>(
       `/api/v1/applications/${sessionId}/messages`,
       { method: "POST", body: JSON.stringify({ message }) },
-      token
+      token,
     ),
+
+  current: (token: string | null) =>
+    request<ResumeResponse>("/api/v1/applications/current", {}, token),
+
+  getApplication: (token: string | null, sessionId: string) =>
+    request<{
+      session_id: string;
+      product_code: string;
+      progress: Progress;
+      filled: Record<string, unknown>;
+    }>(`/api/v1/applications/${sessionId}`, {}, token),
 
   requiredDocuments: (token: string | null, sessionId: string) =>
     request<{ session_id: string; documents: RequiredDocument[] }>(
       `/api/v1/applications/${sessionId}/documents/required`,
       {},
-      token
+      token,
     ),
 
-  uploadDocument: (token: string | null, sessionId: string, verificationType: string, file: File) => {
+  uploadDocument: (
+    token: string | null,
+    sessionId: string,
+    verificationType: string,
+    file: File,
+  ) => {
     const form = new FormData();
     form.append("verification_type", verificationType);
     form.append("file", file);
     return request<UploadDocumentResult>(
       `/api/v1/applications/${sessionId}/documents`,
       { method: "POST", body: form },
-      token
+      token,
     );
   },
 
-  // WhatsApp-style single attach button: no verification_type needed, the
-  // backend auto-picks the next not-yet-uploaded required document.
+  
   uploadNextDocument: (token: string | null, sessionId: string, file: File) => {
     const form = new FormData();
     form.append("file", file);
     return request<UploadDocumentResult>(
       `/api/v1/applications/${sessionId}/documents/next`,
       { method: "POST", body: form },
-      token
+      token,
     );
   },
 
   assessment: (token: string | null, sessionId: string) =>
-    request<AssessmentResult>(`/api/v1/applications/${sessionId}/assessment`, {}, token),
+    request<AssessmentResult>(
+      `/api/v1/applications/${sessionId}/assessment`,
+      {},
+      token,
+    ),
 
   submit: (token: string | null, sessionId: string) =>
-    request<SubmitResult>(`/api/v1/applications/${sessionId}/submit`, { method: "POST" }, token),
+    request<SubmitResult>(
+      `/api/v1/applications/${sessionId}/submit`,
+      { method: "POST" },
+      token,
+    ),
 };

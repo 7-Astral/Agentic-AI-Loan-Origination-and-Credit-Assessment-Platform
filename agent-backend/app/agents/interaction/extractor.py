@@ -21,6 +21,13 @@ Rules:
 - If they gave a value for a field NOT in the list, include it anyway using
   that field's id if you can identify it from the list. Otherwise ignore it.
 - currency and number: return a plain number, no symbols or separators.
+- amount_with_frequency fields (marked "amount_with_frequency": true):
+  return an object {"amount": <number as said>, "frequency": "weekly" |
+  "fortnightly" | "monthly" | "quarterly" | "annually" | null} — the amount
+  EXACTLY as they said it and how often they said. Do NOT convert it to
+  another frequency yourself. Use null only if they gave no frequency.
+  "$400 a week" -> {"amount": 400, "frequency": "weekly"};
+  "50k a year after tax" -> {"amount": 50000, "frequency": "annually"}.
 - boolean: return true or false.
 - choice: return exactly one of the listed options.
 - date: return YYYY-MM-DD.
@@ -39,6 +46,8 @@ def _field_spec(slot: dict) -> dict:
         spec["guidance"] = slot["ask_hint"]
     if slot.get("options"):
         spec["options"] = slot["options"]
+    if slot.get("per_month") or slot.get("per_year") or slot.get("frequency_slot"):
+        spec["amount_with_frequency"] = True
     return spec
 
 

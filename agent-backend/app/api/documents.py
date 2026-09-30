@@ -46,23 +46,15 @@ async def list_required_documents(
     result = await db.execute(select(Document).where(Document.application_id == application_id))
     uploaded = {d.verification_type: d for d in result.scalars().all()}
 
-    vr_result = await db.execute(
-        select(VerificationResult).where(VerificationResult.application_id == application_id)
-    )
-    verifications_by_doc: dict = {}
-    for vr in vr_result.scalars().all():
-        verifications_by_doc.setdefault(str(vr.document_id), []).append(vr.status)
 
     documents = []
     for doc_type in requirements["documents"]:
         existing = uploaded.get(doc_type["code"])
-        statuses = verifications_by_doc.get(str(existing.id), []) if existing else []
         documents.append({
             "code": doc_type["code"],
             "name": doc_type["name"],
             "status": existing.status if existing else "not_uploaded",
             "document_id": str(existing.id) if existing else None,
-            "verification": "mismatch" if "mismatch" in statuses else ("match" if statuses else None),
         })
     return {"session_id": session_id, "documents": documents}
 

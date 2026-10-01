@@ -17,8 +17,8 @@ const label = (metric: string) => METRIC_LABELS[metric] ?? prettify(metric);
 
 const TIER_META: Record<RouteTier, { title: string; summary: string; box: string; icon: typeof XCircle }> = {
   auto_eligible: {
-    title: "Auto-eligible",
-    summary: "All configured rules passed. This application could proceed without manual review.",
+    title: "Approve recommended",
+    summary: "All configured rules passed. A staff member makes the final decision.",
     box: "border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-100",
     icon: CheckCircle2,
   },

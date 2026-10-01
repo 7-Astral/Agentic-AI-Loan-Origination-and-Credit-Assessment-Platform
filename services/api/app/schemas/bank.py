@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 
 class BankPositionOut(BaseModel):
@@ -99,6 +99,12 @@ class ApplicationDecisionOut(BaseModel):
     status: str
     decision: str
     decided_at: datetime
+
+
+class InfoRequestCreate(BaseModel):
+    kind: str = Field(pattern="^(information|document)$")
+    message: str = Field(min_length=1, max_length=2000)
+    document_code: str | None = Field(default=None, max_length=50)
 
 
 class LoanApplyRequest(BaseModel):

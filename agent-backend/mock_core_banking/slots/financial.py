@@ -157,15 +157,5 @@ PHASE_6 = [
     ),
 ]
 
-# Phase 7 — confirmation
-PHASE_7 = [
-    slot(
-        "summary_confirmed", "Summary confirmed by applicant", 7, "boolean",
-        "Read the structured summary back and let them correct anything",
-        regulatory_basis="Assessment accuracy",
-        group="confirmation",
-    ),
-]
-
 PHASE_4 = ASSETS + LIABILITIES + EXPENSES
-FINANCIAL_SLOTS = PHASE_4 + PHASE_6 + PHASE_7
+FINANCIAL_SLOTS = PHASE_4 + PHASE_6

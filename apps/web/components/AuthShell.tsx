@@ -1,3 +1,4 @@
+import { AuthShowcase } from "./AuthShowcase";
 import { IconShield, IconSparkle, IconUsers } from "./icons";
 
 const POINTS = [
@@ -24,6 +25,8 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
             Agentic AI loan origination and credit assessment.
           </h1>
         </div>
+
+        <AuthShowcase />
 
         <ul className="relative space-y-4">
           {POINTS.map((p) => (

@@ -61,6 +61,7 @@ class TurnResponse(BaseModel):
     escalated: bool = False
     product_code: str | None = None
     products: list[ProductOption] | None = None
+    note: str | None = None
 
 
 class ChatMessageOut(BaseModel):
@@ -71,6 +72,39 @@ class ChatMessageOut(BaseModel):
 class ResumeResponse(TurnResponse):
 
     messages: list[ChatMessageOut] = []
+    submitted: bool = False
+
+
+class InfoRequestCreate(BaseModel):
+    kind: str = Field(pattern="^(information|document)$")
+    message: str = Field(min_length=1, max_length=2000)
+    document_code: str | None = Field(default=None, max_length=50)
+    requested_by: str | None = Field(default=None, max_length=150)
+
+
+class InfoRequestReply(BaseModel):
+    message: str = Field(min_length=1, max_length=4000)
+
+
+class InfoRequestOut(BaseModel):
+    id: str
+    kind: str
+    message: str
+    document_code: str | None = None
+    document_name: str | None = None
+    requested_by: str | None = None
+    status: str
+    response_text: str | None = None
+    document_id: str | None = None
+    created_at: datetime
+    answered_at: datetime | None = None
+
+
+class OpenInfoRequestsOut(BaseModel):
+    session_id: str
+    product_code: str | None = None
+    open_count: int
+    latest_message: str
 
 
 class DecisionRequest(BaseModel):

@@ -4,7 +4,9 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  AlertCircle,
   ArrowRight,
+  Bell,
   CheckCircle2,
   Clock,
   FileText,
@@ -16,8 +18,8 @@ import {
   XCircle,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
-import { api, type LoanApplicationOut } from "@/lib/api";
-import { agentApi, type ResumeResponse } from "@/lib/agent-api";
+import { api, type LoanApplicationOut, type NotificationOut } from "@/lib/api";
+import { agentApi, type OpenInfoRequests, type ResumeResponse } from "@/lib/agent-api";
 import { cn } from "@/lib/utils";
 
 const THEME = {
@@ -51,6 +53,9 @@ export default function CustomerPortal() {
   const [applications, setApplications] = useState<LoanApplicationOut[]>([]);
   const [appsLoading, setAppsLoading] = useState(true);
   const [draft, setDraft] = useState<ResumeResponse | null>(null);
+  const [actions, setActions] = useState<OpenInfoRequests[]>([]);
+  const [notifications, setNotifications] = useState<NotificationOut[]>([]);
+  const [bellOpen, setBellOpen] = useState(false);
 
   useEffect(() => {
     if (!loading && (!user || user.role !== "customer")) router.replace("/login");
@@ -68,7 +73,30 @@ export default function CustomerPortal() {
       .current(token)
       .then((res) => setDraft(res.messages.length > 1 ? res : null))
       .catch(() => setDraft(null));
+    agentApi
+      .openInfoRequests(token)
+      .then(setActions)
+      .catch(() => setActions([]));
+    api
+      .notifications(token)
+      .then(setNotifications)
+      .catch(() => {});
   }, [token]);
+
+  function openNotification(n: NotificationOut) {
+    if (token && !n.is_read) {
+      api.markNotificationRead(token, n.id).catch(() => {});
+      setNotifications((rows) => rows.map((r) => (r.id === n.id ? { ...r, is_read: true } : r)));
+    }
+    const sessionId = applications.find((a) => a.id === n.entity_id)?.chat_session_id;
+    if (sessionId && actions.some((a) => a.session_id === sessionId)) {
+      router.push(`/customer/chat?session=${sessionId}`);
+      return;
+    }
+    setBellOpen(false);
+  }
+
+  const unread = notifications.filter((n) => !n.is_read).length;
 
   if (loading || !user) return null;
 
@@ -97,6 +125,59 @@ export default function CustomerPortal() {
             Loan Assistant
           </span>
           <div className="flex items-center gap-3">
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setBellOpen((o) => !o)}
+                aria-label={`Notifications${unread > 0 ? `, ${unread} unread` : ""}`}
+                aria-expanded={bellOpen}
+                className="relative flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 text-slate-600 transition-colors hover:border-primary hover:text-primary"
+              >
+                <Bell className="h-4 w-4" aria-hidden="true" />
+                {unread > 0 && (
+                  <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-600 px-1 text-[11px] font-semibold text-white">
+                    {unread}
+                  </span>
+                )}
+              </button>
+              {bellOpen && (
+                <div className="absolute right-0 z-20 mt-2 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
+                  <p className="border-b border-slate-200 px-4 py-2.5 text-sm font-semibold">Notifications</p>
+                  {notifications.length === 0 ? (
+                    <p className="px-4 py-6 text-center text-sm text-slate-400">Nothing yet.</p>
+                  ) : (
+                    <ul className="max-h-80 divide-y divide-slate-100 overflow-y-auto">
+                      {notifications.map((n) => (
+                        <li key={n.id}>
+                          <button
+                            type="button"
+                            onClick={() => openNotification(n)}
+                            className={cn(
+                              "block w-full px-4 py-3 text-left transition-colors hover:bg-slate-50",
+                              !n.is_read && "bg-amber-50/60",
+                            )}
+                          >
+                            <p className="flex items-center gap-2 text-sm font-medium text-slate-900">
+                              {!n.is_read && <span className="h-2 w-2 shrink-0 rounded-full bg-amber-600" />}
+                              {n.title}
+                            </p>
+                            <p className="mt-0.5 line-clamp-2 text-xs text-slate-500">{n.message}</p>
+                            <p className="mt-1 text-[11px] text-slate-400">
+                              {new Date(n.created_at).toLocaleString("en-AU", {
+                                day: "numeric",
+                                month: "short",
+                                hour: "numeric",
+                                minute: "2-digit",
+                              })}
+                            </p>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
             <span className="hidden text-sm text-slate-500 sm:inline">{user.full_name}</span>
             <button
               type="button"
@@ -113,6 +194,35 @@ export default function CustomerPortal() {
       <main className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:py-10">
         <h1 className="text-2xl font-semibold tracking-tight">Welcome back, {firstName}</h1>
         <p className="mt-1 text-sm text-slate-500">Apply for a loan, pick up where you left off, and track your applications.</p>
+
+        {actions.map((a) => (
+          <section
+            key={a.session_id}
+            className="chat-in mt-6 overflow-hidden rounded-xl border border-amber-300 bg-amber-50 shadow-sm"
+          >
+            <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+              <div className="min-w-0 flex-1">
+                <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-amber-800">
+                  <AlertCircle className="h-3.5 w-3.5" aria-hidden="true" />
+                  Action needed
+                </p>
+                <h2 className="mt-1 text-lg font-semibold">
+                  The bank needs {a.open_count === 1 ? "one more thing" : `${a.open_count} more things`} from you
+                </h2>
+                <p className="mt-2 line-clamp-2 border-l-2 border-amber-400 pl-3 text-sm italic text-slate-600">
+                  {a.latest_message}
+                </p>
+              </div>
+              <Link
+                href={`/customer/chat?session=${a.session_id}`}
+                className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md bg-amber-600 px-5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-amber-700"
+              >
+                Respond
+                <ArrowRight className="h-4 w-4" aria-hidden="true" />
+              </Link>
+            </div>
+          </section>
+        ))}
 
         {draft ? (
           <section className="chat-in mt-6 overflow-hidden rounded-xl border border-primary/20 bg-white shadow-sm">

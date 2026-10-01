@@ -41,10 +41,33 @@ export interface TurnResponse {
   escalated: boolean;
   product_code: string | null;
   products?: ProductOption[] | null;
+  note?: string | null;
 }
 
 export interface ResumeResponse extends TurnResponse {
   messages: { role: string; content: string }[];
+  submitted?: boolean;
+}
+
+export interface InfoRequest {
+  id: string;
+  kind: "information" | "document";
+  message: string;
+  document_code: string | null;
+  document_name: string | null;
+  requested_by: string | null;
+  status: "open" | "answered";
+  response_text: string | null;
+  document_id: string | null;
+  created_at: string;
+  answered_at: string | null;
+}
+
+export interface OpenInfoRequests {
+  session_id: string;
+  product_code: string | null;
+  open_count: number;
+  latest_message: string;
 }
 
 export interface RequiredDocument {
@@ -197,6 +220,50 @@ export const agentApi = {
       {},
       token,
     ),
+
+  resume: (token: string | null, sessionId: string) =>
+    request<ResumeResponse>(
+      `/api/v1/applications/${sessionId}/resume`,
+      {},
+      token,
+    ),
+
+  infoRequests: (token: string | null, sessionId: string) =>
+    request<InfoRequest[]>(
+      `/api/v1/applications/${sessionId}/info-requests`,
+      {},
+      token,
+    ),
+
+  openInfoRequests: (token: string | null) =>
+    request<OpenInfoRequests[]>("/api/v1/info-requests/open", {}, token),
+
+  replyToInfoRequest: (
+    token: string | null,
+    sessionId: string,
+    requestId: string,
+    message: string,
+  ) =>
+    request<InfoRequest>(
+      `/api/v1/applications/${sessionId}/info-requests/${requestId}/reply`,
+      { method: "POST", body: JSON.stringify({ message }) },
+      token,
+    ),
+
+  uploadForInfoRequest: (
+    token: string | null,
+    sessionId: string,
+    requestId: string,
+    file: File,
+  ) => {
+    const form = new FormData();
+    form.append("file", file);
+    return request<{ document_id: string; status: string; reason?: string }>(
+      `/api/v1/applications/${sessionId}/info-requests/${requestId}/document`,
+      { method: "POST", body: form },
+      token,
+    );
+  },
 
   submit: (token: string | null, sessionId: string) =>
     request<SubmitResult>(

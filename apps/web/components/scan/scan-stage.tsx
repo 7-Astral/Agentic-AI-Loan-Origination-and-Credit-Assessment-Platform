@@ -70,10 +70,6 @@ export function ScanStage({ pages, phase, looping, sweepMs, revealed, activeId }
           )}
 
           {page.width > 0 &&
-            Object.entries(page.fields).map(([id, box]) => (
-              <Highlight key={id} box={box} page={page} on={revealed.has(id)} active={activeId === id} />
-            ))}
-          {page.width > 0 &&
             Object.entries(page.rows).map(([rowIndex, box]) => (
               <Highlight
                 key={`row:${rowIndex}`}

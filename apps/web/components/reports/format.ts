@@ -36,7 +36,7 @@ export function fmtScore(score: number | null | undefined) {
 }
 
 export const TIER: Record<string, { label: string; tone: Tone; hint: string }> = {
-  auto_eligible: { label: "Auto-eligible", tone: "emerald", hint: "Meets policy — suitable to approve" },
+  auto_eligible: { label: "Meets policy", tone: "emerald", hint: "No policy issues found — ready for your decision" },
   underwriter_review: { label: "Underwriter review", tone: "amber", hint: "Needs a closer look before deciding" },
   conditional: { label: "Conditional", tone: "slate", hint: "Missing data — decision depends on it" },
   decline_recommended: { label: "Decline recommended", tone: "red", hint: "Falls outside lending policy" },

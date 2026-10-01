@@ -148,6 +148,181 @@ html {
   animation: nudge 360ms ease-in-out;
 }
 
+.showcase-stage {
+  position: relative;
+  display: flex;
+  height: 300px;
+  align-items: center;
+  justify-content: center;
+  perspective: 1000px;
+}
+
+.pipe-tilt {
+  position: relative;
+  display: flex;
+  width: 280px;
+  flex-direction: column;
+  gap: 16px;
+  transform-style: preserve-3d;
+  transform: rotateY(16deg) rotateX(6deg);
+  animation: pipe-float 7s ease-in-out infinite;
+}
+
+.pipe-rail {
+  position: absolute;
+  left: 19px;
+  top: 28px;
+  bottom: 28px;
+  width: 2px;
+  border-radius: 9999px;
+  background: rgb(255 255 255 / 0.12);
+}
+
+.pipe-packet {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  height: 10px;
+  width: 10px;
+  margin-left: -5px;
+  margin-top: -5px;
+  border-radius: 9999px;
+  background: rgb(255 255 255);
+  box-shadow: 0 0 14px 4px rgb(129 140 248 / 0.8);
+  animation: pipe-travel 8s linear infinite;
+}
+
+.pipe-step {
+  position: relative;
+  display: flex;
+  height: 56px;
+  align-items: center;
+  gap: 14px;
+  transform-style: preserve-3d;
+}
+
+.pipe-node {
+  display: flex;
+  height: 40px;
+  width: 40px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  border: 1px solid rgb(255 255 255 / 0.15);
+  background: rgb(30 41 59);
+  color: rgb(148 163 184);
+  animation: pipe-node 8s linear infinite;
+  animation-delay: var(--d);
+}
+
+.pipe-card {
+  flex: 1;
+  border-radius: 12px;
+  border: 1px solid rgb(255 255 255 / 0.1);
+  background: rgb(30 41 59 / 0.7);
+  padding: 10px 14px;
+  animation: pipe-card 8s ease-in-out infinite;
+  animation-delay: var(--d);
+}
+
+@keyframes pipe-travel {
+  0% {
+    top: 0%;
+    opacity: 0;
+  }
+  3% {
+    opacity: 1;
+  }
+  75% {
+    top: 100%;
+    opacity: 1;
+  }
+  94% {
+    top: 100%;
+    opacity: 1;
+  }
+  100% {
+    top: 100%;
+    opacity: 0;
+  }
+}
+
+@keyframes pipe-node {
+  0% {
+    border-color: rgb(255 255 255 / 0.15);
+    background: rgb(30 41 59);
+    color: rgb(148 163 184);
+    box-shadow: 0 0 0 0 rgb(var(--c) / 0);
+  }
+  4%,
+  25% {
+    border-color: rgb(var(--c));
+    background: rgb(var(--c));
+    color: rgb(15 23 42);
+    box-shadow: 0 0 26px 4px rgb(var(--c) / 0.55);
+  }
+  33%,
+  100% {
+    border-color: rgb(255 255 255 / 0.15);
+    background: rgb(30 41 59);
+    color: rgb(148 163 184);
+    box-shadow: 0 0 0 0 rgb(var(--c) / 0);
+  }
+}
+
+@keyframes pipe-card {
+  0% {
+    border-color: rgb(255 255 255 / 0.1);
+    background: rgb(30 41 59 / 0.7);
+    transform: translateZ(0);
+  }
+  4%,
+  25% {
+    border-color: rgb(var(--c) / 0.7);
+    background: rgb(51 65 85 / 0.95);
+    transform: translateZ(28px);
+  }
+  33%,
+  100% {
+    border-color: rgb(255 255 255 / 0.1);
+    background: rgb(30 41 59 / 0.7);
+    transform: translateZ(0);
+  }
+}
+
+@keyframes pipe-float {
+  0%,
+  100% {
+    transform: rotateY(16deg) rotateX(6deg) translateY(-5px);
+  }
+  50% {
+    transform: rotateY(11deg) rotateX(3deg) translateY(5px);
+  }
+}
+
+@media (max-height: 760px) {
+  .showcase-stage {
+    height: 215px;
+    transform: scale(0.74);
+  }
+}
+
+@media (max-height: 540px) {
+  .showcase-stage {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pipe-tilt,
+  .pipe-packet,
+  .pipe-node,
+  .pipe-card {
+    animation: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .chat-in,
   .avatar-in,

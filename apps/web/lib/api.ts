@@ -1,3 +1,4 @@
+import type { InfoRequest } from "./agent-api";
 import { handleExpiredSession } from "./session";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -446,6 +447,18 @@ export const api = {
   decideApplication: (token: string, applicationId: string, payload: ApplicationDecisionPayload) =>
     request<ApplicationDecisionOut>(
       `/bank/loan-applications/${applicationId}/decision`,
+      { method: "POST", body: JSON.stringify(payload) },
+      token
+    ),
+  bankInfoRequests: (token: string, applicationId: string) =>
+    request<InfoRequest[]>(`/bank/loan-applications/${applicationId}/info-requests`, {}, token),
+  createBankInfoRequest: (
+    token: string,
+    applicationId: string,
+    payload: { kind: "information" | "document"; message: string; document_code?: string | null }
+  ) =>
+    request<InfoRequest>(
+      `/bank/loan-applications/${applicationId}/info-requests`,
       { method: "POST", body: JSON.stringify(payload) },
       token
     ),

@@ -2,7 +2,7 @@
 import uuid
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import async_session
@@ -63,6 +63,13 @@ async def ensure_application(
 
 
 async def latest_open_session(applicant_id: str) -> str | None:
+    # Furthest-progressed session first, so an abandoned empty chat started
+    # later never hides a finished interview that is still waiting on documents.
+    progress = case(
+        {status: rank for rank, status in enumerate(STATUS_ORDER)},
+        value=Application.status,
+        else_=-1,
+    )
     async with async_session() as db:
         result = await db.execute(
             select(Application.id)
@@ -71,7 +78,7 @@ async def latest_open_session(applicant_id: str) -> str | None:
                 Application.platform_application_id.is_(None),
                 Application.status.notin_(("approved", "declined", "withdrawn")),
             )
-            .order_by(Application.updated_at.desc())
+            .order_by(progress.desc(), Application.updated_at.desc())
             .limit(1)
         )
         found = result.scalar_one_or_none()
@@ -82,6 +89,12 @@ async def get_applicant_id(session_id: str) -> str | None:
     async with async_session() as db:
         application = await db.get(Application, uuid.UUID(session_id))
         return str(application.applicant_id) if application and application.applicant_id else None
+
+
+async def is_submitted(session_id: str) -> bool:
+    async with async_session() as db:
+        application = await db.get(Application, uuid.UUID(session_id))
+        return application is not None and application.platform_application_id is not None
 
 
 PLATFORM_STATUS_TO_LOCAL = {

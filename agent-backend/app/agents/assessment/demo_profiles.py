@@ -36,7 +36,7 @@ def _income(gross: int) -> dict:
 PRESETS = [
     {
         "id": "personal_strong", "label": "Strong personal loan applicant",
-        "description": "Solid income, clean credit file. Expect auto-eligible.",
+        "description": "Solid income, clean credit file. Expect approve recommended.",
         "product_code": "PL-STD-001", "bureau_scenario": "prime", "use_sample_statement": True,
         "filled": {**_APPLICANT, **_income(95000),
                    "loan_amount": 20000, "loan_term_months": 60, "loan_purpose": "debt_consolidation"},

@@ -7,6 +7,8 @@ from langgraph.types import Command
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.assessment.run import run_retail_assessment
+from app.agents.interaction.advisor import answer_question
+from app.agents.interaction.corrections import apply_correction
 from app.agents.interaction.resolver import progress as compute_progress
 from app.api.schemas import (
     ApplicationResponse,
@@ -30,6 +32,7 @@ from app.services.operational import (
     latest_open_session,
     get_applicant_id,
     get_bank_id,
+    is_submitted,
     mirror_transcript,
     mirror_turn,
     record_platform_submission,
@@ -210,6 +213,77 @@ async def start_application(
     return await _discovery_turn(request, session_id, result)
 
 
+def _display(value) -> str:
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    if isinstance(value, (int, float)):
+        return f"{value:,.0f}" if float(value).is_integer() else f"{value:,.2f}"
+    return str(value).replace("_", " ")
+
+
+def _correction_note(slots: list[dict], outcome: dict) -> str:
+    labels = {s["id"]: s["label"] for s in slots}
+    parts = []
+    if outcome["changed"]:
+        lines = []
+        for slot_id, value in outcome["changed"].items():
+            previous = outcome["previous"].get(slot_id)
+            label = labels.get(slot_id, slot_id)
+            if previous is None:
+                lines.append(f"- **{label}**: {_display(value)}")
+            else:
+                lines.append(f"- **{label}**: {_display(previous)} → {_display(value)}")
+        parts.append("I've updated your application:\n\n" + "\n".join(lines))
+    if outcome["errors"]:
+        parts.append("I couldn't change this — " + "; ".join(outcome["errors"]) + ".")
+    return "\n\n".join(parts)
+
+
+async def _answer(session_id: str, values: dict, message: str) -> str:
+    product = None
+    try:
+        product = await core_banking.get_product(values["product_code"], bank_id=await get_bank_id(session_id))
+    except (httpx.HTTPError, KeyError):
+        pass
+    return await answer_question(
+        message, product, values["slots"], values.get("filled") or {}, values.get("transcript") or []
+    )
+
+
+async def _correction_turn(request: Request, session_id: str, message: str) -> TurnResponse:
+    graph = request.app.state.interview_graph
+    config = _interview_config(session_id)
+    snapshot = await graph.aget_state(config)
+    values = snapshot.values
+
+    outcome = await apply_correction(values, message)
+    if outcome["changed"] or outcome["errors"]:
+        note = _correction_note(values["slots"], outcome)
+    else:
+        note = await _answer(session_id, values, message)
+
+    update = {
+        "filled": outcome["changed"],
+        "provenance": outcome["provenance"],
+        "turn": outcome["turn"],
+        "transcript": [
+            {"role": "user", "content": message},
+            {"role": "assistant", "content": note},
+        ],
+    }
+    if values.get("escalate"):
+        await graph.aupdate_state(config, update, as_node="finish")
+        result: dict = {}
+    else:
+        update.update({"repair": False, "last_error": None, "pending_question": None})
+        await graph.aupdate_state(config, update, as_node="ingest")
+        result = await graph.ainvoke(None, config)
+
+    response = await _interview_turn(request, session_id, result)
+    response.note = note
+    return response
+
+
 async def _check_ownership(session_id: str, authorization: str | None) -> None:
     token_customer_id = get_customer_id_from_token(authorization)
     owner_id = await get_applicant_id(session_id)
@@ -226,7 +300,9 @@ async def send_message(
     if stage is None:
         raise HTTPException(404, "Unknown session")
     if stage == "complete":
-        raise HTTPException(409, "This application is already complete")
+        if await is_submitted(session_id):
+            raise HTTPException(409, "This application has already been submitted to the bank")
+        return await _correction_turn(request, session_id, body.message)
 
     if stage == "discovery":
         graph, config = request.app.state.discovery_graph, _discovery_config(session_id)
@@ -303,8 +379,22 @@ async def current_application(request: Request, authorization: str | None = Head
     session_id = await latest_open_session(customer_id)
     if session_id is None:
         raise HTTPException(404, "No application in progress")
+    return await _resume_response(request, session_id)
 
-    discovery = await request.app.state.discovery_graph.aget_state(_discovery_config(session_id))
+
+@router.get("/{session_id}/resume", response_model=ResumeResponse)
+async def resume_application(
+    request: Request, session_id: str, authorization: str | None = Header(default=None)
+) -> ResumeResponse:
+    await _check_ownership(session_id, authorization)
+    if await _resolve_stage(request, session_id) is None:
+        raise HTTPException(404, "Unknown session")
+    return await _resume_response(request, session_id)
+
+
+async def _resume_response(request: Request, session_id: str) -> ResumeResponse:
+    submitted = await is_submitted(session_id)
+    discovery =await request.app.state.discovery_graph.aget_state(_discovery_config(session_id))
     interview = await request.app.state.interview_graph.aget_state(_interview_config(session_id))
     transcript = list((discovery.values or {}).get("transcript") or []) + list(
         (interview.values or {}).get("transcript") or []
@@ -324,6 +414,7 @@ async def current_application(request: Request, authorization: str | None = Head
             complete=complete,
             product_code=values.get("product_code"),
             messages=messages,
+            submitted=submitted,
         )
 
     if discovery.values:

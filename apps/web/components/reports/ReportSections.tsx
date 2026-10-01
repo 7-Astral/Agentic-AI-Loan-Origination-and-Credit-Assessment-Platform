@@ -564,7 +564,10 @@ export function RecommendationPanel({ assessment }: { assessment: AssessmentRepo
         <p className="px-4 py-3 text-[14px] leading-6 text-[#343a42]">{assessment.narrative_summary}</p>
       ) : (
         <div className="space-y-2 px-4 py-4" aria-live="polite">
-          <p className="text-[13px] text-[#5d6470]">Writing summary…</p>
+          <p className="flex items-center gap-2 text-[13px] text-[#5d6470]">
+            <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[#cfd3d9] border-t-[#1f5fa8]" />
+            Writing AI recommendation…
+          </p>
           <div className="h-2.5 w-full animate-pulse rounded bg-[#e5e8ec]" />
           <div className="h-2.5 w-11/12 animate-pulse rounded bg-[#e5e8ec]" />
           <div className="h-2.5 w-3/4 animate-pulse rounded bg-[#e5e8ec]" />
@@ -639,7 +642,7 @@ export function ApprovalPanel({
     {
       title: "Credit assessment · AI engine",
       detail: assessment
-        ? `Recommended ${TIER[assessment.tier]?.label.toLowerCase() ?? humanize(assessment.tier)} · ${fmtDate(assessment.generated_at)}`
+        ? `Result: ${TIER[assessment.tier]?.label ?? humanize(assessment.tier)} · ${fmtDate(assessment.generated_at)}`
         : "Not run yet",
       state: assessment ? "done" : "todo",
     },

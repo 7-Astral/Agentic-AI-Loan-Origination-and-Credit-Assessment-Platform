@@ -100,6 +100,24 @@ class AssessmentResult(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
+class InformationRequest(Base):
+    __tablename__ = "information_requests"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    application_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("applications.id"), index=True
+    )
+    kind: Mapped[str] = mapped_column(String(20))
+    message: Mapped[str] = mapped_column(Text)
+    document_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    requested_by: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="open")
+    response_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    document_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class Decision(Base):
     
     __tablename__ = "decisions"

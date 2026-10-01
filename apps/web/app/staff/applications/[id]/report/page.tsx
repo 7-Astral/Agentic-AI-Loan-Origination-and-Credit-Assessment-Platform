@@ -14,6 +14,7 @@ import {
 } from "@/lib/api";
 import { DecideModal } from "@/components/applications/DecideModal";
 import { VerificationWorkspace } from "@/components/reports/VerificationWorkspace";
+import { InfoRequestPanel } from "@/components/reports/InfoRequestPanel";
 import {
   ApplicantTab,
   ApprovalPanel,
@@ -83,7 +84,6 @@ export default function ApplicationReportPage() {
 
   useEffect(load, [load]);
 
- 
   const needsNarrative = !!assessment && !assessment.narrative_summary;
   useEffect(() => {
     if (!needsNarrative || !token || !params.id) return;
@@ -114,6 +114,8 @@ export default function ApplicationReportPage() {
       cancelled = true;
     };
   }, [needsNarrative, token, params.id]);
+
+ 
 
   const fullName = assessment?.applicant_summary.find(
     (f) => f.id === "full_name",
@@ -241,6 +243,12 @@ export default function ApplicationReportPage() {
             <aside className="w-full shrink-0 space-y-3 lg:sticky lg:top-4 lg:w-[360px] print:order-first print:w-full">
               {assessment && <RecommendationPanel assessment={assessment} />}
               {assessment && <ConditionsPanel assessment={assessment} />}
+              <InfoRequestPanel
+                application={application}
+                chat={chat}
+                token={token}
+                onAnswered={load}
+              />
               <ApprovalPanel
                 application={application}
                 assessment={assessment}

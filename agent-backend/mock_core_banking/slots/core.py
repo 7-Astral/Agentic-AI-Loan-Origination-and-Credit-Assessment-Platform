@@ -254,8 +254,11 @@ PHASE_3 = [
         per_year=True,
     ),
     slot(
-        "net_income_amount", "Net income per pay period", 3, "currency",
-        "After tax, as it lands in their account, and how often they get it",
+        "net_income_amount", "Take-home pay (after tax)", 3, "currency",
+        "Their take-home pay after tax AND what period that amount covers, asked together in one "
+        "question, e.g. 'What is your take-home pay after tax, and is that amount per week, per "
+        "fortnight, per month or per year?' Give a short example answer such as '$1,050 a week'. "
+        "Never say 'per pay period' or 'pay cycle'",
         sources=("extracted", "ask"),
         validation={"min": 0},
         verification="bank_statements",
@@ -264,9 +267,10 @@ PHASE_3 = [
         frequency_slot="net_income_frequency",
     ),
     slot(
-        "net_income_frequency", "Net income frequency", 3, "choice",
-        "How often they receive the take-home amount they already gave — ask it as "
-        "'Is that $<amount> per week, fortnight, month or year?'",
+        "net_income_frequency", "Take-home pay period", 3, "choice",
+        "What period the take-home amount they already gave covers. This is NOT how often they "
+        "are paid. State their amount back and ask it as 'Is that $<amount> what you take home "
+        "each week, each fortnight, each month, or over the whole year?'",
         options=["weekly", "fortnightly", "monthly", "annually"],
         sources=("extracted", "ask"),
         group="income",

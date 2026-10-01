@@ -18,6 +18,7 @@ from app.services.core_banking import core_banking
 from app.api.documents import router as documents_router
 from app.api.decisions import router as decisions_router
 from app.api.report import router as report_router
+from app.api.info_requests import router as info_requests_router
 from app.models.documents import Document, DocumentExtraction, VerificationResult
 from app.models.application import Application, ApplicationSlot, AssessmentResult, Decision, Message
 from app.models.identity import User
@@ -61,6 +62,7 @@ app.include_router(decisions_router)
 app.include_router(playground_router)
 app.include_router(playground_documents_router)
 app.include_router(report_router)
+app.include_router(info_requests_router)
 
 @app.get("/health")
 def health():

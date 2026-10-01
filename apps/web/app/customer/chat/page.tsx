@@ -27,6 +27,7 @@ import { useAuth } from "@/lib/auth-context";
 import {
   agentApi,
   AgentApiError,
+  type InfoRequest,
   type ProductOption,
   type Progress,
   type RequiredDocument,
@@ -40,6 +41,7 @@ import {
   DocumentRequestCard,
   type DocCardState,
 } from "@/components/chat/DocumentRequestCard";
+import { InfoRequestCard } from "@/components/chat/InfoRequestCard";
 import { cn } from "@/lib/utils";
 
 
@@ -164,6 +166,8 @@ export default function LoanAssistantChat() {
   const [submitting, setSubmitting] = useState(false);
   const [submitResult, setSubmitResult] = useState<SubmitResult | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [infoRequests, setInfoRequests] = useState<InfoRequest[]>([]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -204,7 +208,13 @@ export default function LoanAssistantChat() {
     try {
       if (!fresh) {
         try {
-          const res = await agentApi.current(token);
+          const requested = new URLSearchParams(window.location.search).get(
+            "session",
+          );
+          const res = requested
+            ? await agentApi.resume(token, requested)
+            : await agentApi.current(token);
+          setSubmitted(!!res.submitted);
           setSessionId(res.session_id);
           applyTurn(res);
           const history: ChatMessage[] = res.messages.map((m) => ({
@@ -274,6 +284,9 @@ export default function LoanAssistantChat() {
     setDocStates({});
     setCurrentDoc(null);
     setSubmitResult(null);
+    setSubmitted(false);
+    setInfoRequests([]);
+    router.replace("/customer/chat");
     beginSession(true);
   }
 
@@ -282,7 +295,27 @@ export default function LoanAssistantChat() {
       top: scrollRef.current.scrollHeight,
       behavior: "smooth",
     });
-  }, [messages, sending, requiredDocs, submitResult]);
+  }, [messages, sending, requiredDocs, submitResult, infoRequests]);
+
+  const isSubmitted = submitted || !!submitResult;
+
+  useEffect(() => {
+    if (!sessionId || !isSubmitted) return;
+    let cancelled = false;
+    const load = () =>
+      agentApi
+        .infoRequests(token, sessionId)
+        .then((rows) => {
+          if (!cancelled) setInfoRequests(rows);
+        })
+        .catch(() => {});
+    load();
+    const timer = setInterval(load, 15000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [sessionId, isSubmitted, token]);
 
   // Put focus back in the reply box after every turn, so the applicant can
  
@@ -315,9 +348,15 @@ export default function LoanAssistantChat() {
     setMessages((m) => [...m, { role: "user", text, at: now() }]);
     setInput("");
     setSlotsInPlay([]);
+    const wasComplete = stage === "complete";
     try {
       const res = await agentApi.sendMessage(token, sessionId, text);
       applyTurn(res);
+      if (res.note)
+        setMessages((m) => [
+          ...m,
+          { role: "agent", text: res.note as string, at: now() },
+        ]);
       if (res.question)
         setMessages((m) => [
           ...m,
@@ -328,12 +367,15 @@ export default function LoanAssistantChat() {
             at: now(),
           },
         ]);
-      if (res.stage === "complete")
+      if (res.stage === "complete" && !wasComplete)
         setMessages((m) => [
           ...m,
           {
             role: "agent",
-            text: "That's everything I need from you for the application. I'll pass you to our Document Assistant to collect a few files.",
+            text:
+              docPhase === "off"
+                ? "That's everything I need from you for the application. I'll pass you to our Document Assistant to collect a few files."
+                : "Thanks — that's everything again. You can submit whenever you're ready.",
             at: now(),
           },
         ]);
@@ -408,7 +450,12 @@ export default function LoanAssistantChat() {
 
 
   useEffect(() => {
-    if (stage !== "complete" || requiredDocs === null || docPhase !== "off")
+    if (
+      stage !== "complete" ||
+      requiredDocs === null ||
+      docPhase !== "off" ||
+      submitted
+    )
       return;
     setDocPhase("handover");
     (async () => {
@@ -436,7 +483,39 @@ export default function LoanAssistantChat() {
       setDocPhase("active");
       await askNext(null, requiredDocs, {});
     })();
-  }, [stage, requiredDocs, docPhase]);
+  }, [stage, requiredDocs, docPhase, submitted]);
+
+  async function replyToRequest(requestId: string, message: string) {
+    if (!sessionId) return;
+    const updated = await agentApi.replyToInfoRequest(
+      token,
+      sessionId,
+      requestId,
+      message,
+    );
+    setInfoRequests((rows) =>
+      rows.map((r) => (r.id === requestId ? { ...r, ...updated } : r)),
+    );
+    show("Reply sent to the bank", "success");
+  }
+
+  async function uploadForRequest(requestId: string, file: File) {
+    if (!sessionId) return null;
+    const result = await agentApi.uploadForInfoRequest(
+      token,
+      sessionId,
+      requestId,
+      file,
+    );
+    if (result.status === "needs_reupload")
+      return (
+        result.reason ||
+        "That file doesn't look like the document the bank asked for — please try another."
+      );
+    setInfoRequests(await agentApi.infoRequests(token, sessionId));
+    show("Document sent to the bank", "success");
+    return null;
+  }
 
   async function handleDocFile(code: string, file: File) {
     if (!sessionId || !requiredDocs) return;
@@ -585,7 +664,7 @@ export default function LoanAssistantChat() {
   const docsDone = requiredDocs
     ? requiredDocs.filter((d) => d.status === "extracted").length
     : 0;
-  const overall = submitResult
+  const overall = isSubmitted
     ? 100
     : stage === "complete"
       ? 80 +
@@ -598,7 +677,7 @@ export default function LoanAssistantChat() {
           ? 5
           : 0;
 
-  const currentStep = submitResult
+  const currentStep = isSubmitted
     ? 4
     : stage === "complete"
       ? 2
@@ -626,8 +705,11 @@ export default function LoanAssistantChat() {
   const stepStatus = (i: number): StepStatus =>
     i < currentStep ? "complete" : i === currentStep ? "active" : "pending";
 
-  const helper = submitResult
-    ? "All done — the bank has your application."
+  const openRequests = infoRequests.filter((r) => r.status === "open").length;
+  const helper = isSubmitted
+    ? openRequests > 0
+      ? `The bank needs ${openRequests === 1 ? "one more thing" : `${openRequests} more things`} from you.`
+      : "All done — the bank has your application."
     : stage === "complete"
       ? requiredDocs?.length
         ? `${docsDone} of ${requiredDocs.length} documents received.`
@@ -753,7 +835,10 @@ export default function LoanAssistantChat() {
     requiredDocs?.find((d) => d.code === currentDoc)?.name ?? "";
 
   return (
-    <div className="flex h-dvh flex-col bg-white text-slate-900" style={THEME}>
+    <div
+      className="flex h-dvh flex-col overflow-hidden bg-white text-slate-900"
+      style={THEME}
+    >
       <header className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 px-4 sm:h-16 sm:px-6">
         <div className="flex items-center gap-6">
           {docPhase === "off" ? (
@@ -793,7 +878,7 @@ export default function LoanAssistantChat() {
             <LayoutGrid className="h-4 w-4" aria-hidden="true" />
             Progress
           </button>
-          {sessionId && !submitResult && (
+          {sessionId && !isSubmitted && (
             <button
               type="button"
               onClick={startOver}
@@ -840,7 +925,7 @@ export default function LoanAssistantChat() {
           )}
           <div
             ref={scrollRef}
-            className="flex-1 space-y-6 overflow-y-auto p-4 sm:p-6"
+            className="relative flex-1 space-y-6 overflow-y-auto p-4 sm:p-6"
           >
             {messages.length === 0 && !error && (
               <div className="flex items-center gap-2 text-sm text-slate-500">
@@ -964,7 +1049,10 @@ export default function LoanAssistantChat() {
               </div>
             )}
 
-            {docPhase === "done" && !submitResult && requiredDocs && (
+            {docPhase === "done" &&
+              stage === "complete" &&
+              !isSubmitted &&
+              requiredDocs && (
               <div className="chat-in max-w-xl rounded-lg border border-slate-200 p-4 sm:ml-[52px]">
                 <h3 className="font-semibold text-slate-900">
                   Ready to submit
@@ -1006,10 +1094,14 @@ export default function LoanAssistantChat() {
                   )}
                   Submit application
                 </button>
+                <p className="mt-3 text-center text-xs text-slate-500">
+                  Have a question about this loan, or need to change an answer
+                  first? Type it in the message box below.
+                </p>
               </div>
             )}
 
-            {submitResult && (
+            {isSubmitted && (
               <div className="rounded-lg border border-slate-200 p-4 sm:ml-[52px]">
                 <p className="flex items-center gap-2 font-semibold text-slate-900">
                   <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
@@ -1019,8 +1111,9 @@ export default function LoanAssistantChat() {
                 </p>
                 <p className="mt-1 text-sm text-slate-500">
                   A member of the bank&apos;s team reviews every application
-                  {submitResult.pending_position_title ? ` — it's with the ${submitResult.pending_position_title} now` : ""}.
-                  We&apos;ll let you know the decision.
+                  {submitResult?.pending_position_title ? ` — it's with the ${submitResult.pending_position_title} now` : ""}.
+                  We&apos;ll let you know the decision. If they need anything
+                  more from you, their request will appear here.
                 </p>
                 <Link
                   href="/customer"
@@ -1030,6 +1123,16 @@ export default function LoanAssistantChat() {
                 </Link>
               </div>
             )}
+
+            {isSubmitted &&
+              infoRequests.map((r) => (
+                <InfoRequestCard
+                  key={r.id}
+                  request={r}
+                  onReply={(message) => replyToRequest(r.id, message)}
+                  onFile={(file) => uploadForRequest(r.id, file)}
+                />
+              ))}
 
             {error && (
               <p className="text-sm text-red-600 sm:pl-[52px]">{error}</p>
@@ -1060,7 +1163,7 @@ export default function LoanAssistantChat() {
               </div>
             )}
 
-          {stage !== "complete" && (
+          {!isSubmitted && (
             <div className="shrink-0 space-y-3 border-t border-slate-200 p-4 sm:space-y-4 sm:p-6">
               {options.length > 0 && (
                 <div className="flex flex-wrap gap-2">
@@ -1114,7 +1217,11 @@ export default function LoanAssistantChat() {
                   ref={inputRef}
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder="Type your message here..."
+                  placeholder={
+                    stage === "complete"
+                      ? "Ask about your loan, or tell me what to change..."
+                      : "Type your message here..."
+                  }
                   disabled={!sessionId || sending}
                   className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm placeholder:text-slate-400 focus-visible:border-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
                 />

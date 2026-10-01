@@ -30,6 +30,7 @@ from app.schemas.bank import (
     CreateBankStaffRequest,
     CreateLendingPolicyRequest,
     CreateLoanProductRequest,
+    InfoRequestCreate,
     LoanApplicationOut,
     NotificationOut,
     UpdateBankStaffRequest,
@@ -651,6 +652,86 @@ async def get_application_document_file(
 ):
    
     return await _fetch_chat_session_resource(application_id, staff, db, f"documents/{document_id}/file", raw=True)
+
+
+@router.get("/loan-applications/{application_id}/info-requests")
+async def list_application_info_requests(
+    application_id: uuid.UUID,
+    staff: User = Depends(get_current_staff),
+    db: AsyncSession = Depends(get_db),
+):
+    return await _fetch_chat_session_resource(application_id, staff, db, "info-requests/all")
+
+
+@router.post("/loan-applications/{application_id}/info-requests", status_code=status.HTTP_201_CREATED)
+async def create_application_info_request(
+    application_id: uuid.UUID,
+    payload: InfoRequestCreate,
+    staff: User = Depends(get_current_staff),
+    db: AsyncSession = Depends(get_db),
+):
+    application = await db.get(LoanApplication, application_id)
+    if application is None or application.bank_id != staff.bank_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
+    if not application.chat_session_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="This application wasn't submitted via the chat assistant",
+        )
+    if application.status not in (LoanStatus.SUBMITTED.value, LoanStatus.UNDER_REVIEW.value):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Application is '{application.status}' — a decision has already been recorded",
+        )
+
+    position = await db.get(BankPosition, staff.position_id) if staff.position_id else None
+    url = f"{settings.agent_backend_base_url}/api/v1/applications/{application.chat_session_id}/info-requests"
+    body = {
+        "kind": payload.kind,
+        "message": payload.message,
+        "document_code": payload.document_code,
+        "requested_by": position.title if position else staff.full_name,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(url, json=body, headers={"X-API-Key": settings.service_api_key})
+        resp.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Chat assistant service returned an error: {exc.response.text}",
+        ) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Chat assistant service is unavailable",
+        ) from exc
+
+    db.add(
+        Notification(
+            user_id=application.applicant_id,
+            title=(
+                "The bank needs a document from you"
+                if payload.kind == "document"
+                else "The bank has a question about your application"
+            ),
+            message=payload.message,
+            entity_type="loan_application",
+            entity_id=str(application.id),
+        )
+    )
+    db.add(
+        AuditLog(
+            bank_id=staff.bank_id,
+            entity_type="loan_application",
+            entity_id=str(application.id),
+            action="info_requested",
+            performed_by=staff.id,
+            after_state={"kind": payload.kind, "message": payload.message},
+        )
+    )
+    await db.commit()
+    return resp.json()
 
 
 @router.get("/audit-logs", response_model=list[AuditLogOut])

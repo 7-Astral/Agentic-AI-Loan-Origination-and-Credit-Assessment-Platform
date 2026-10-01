@@ -152,17 +152,27 @@ export default function ScanPage() {
     setPhase("scanning");
     later(LOOP_AFTER_MS, () => setLooping(true));
 
-    let data: ExtractResponse;
-    try {
-      data = await extractDocument({
+    const request = (live: boolean) =>
+      extractDocument({
         verificationType:
           source.kind === "sample" ? (sampleOf(source.sampleId)?.verification_type ?? "") : source.verificationType,
         declared: {},
         sampleId: source.kind === "sample" ? source.sampleId : null,
-        live: source.kind === "upload",
+        live,
         file: source.kind === "upload" ? source.file : null,
         categorize: false,
       });
+
+    let data: ExtractResponse;
+    let fellBack = false;
+    try {
+      try {
+        data = await request(true);
+      } catch (err) {
+        if (source.kind !== "sample") throw err;
+        data = await request(false);
+        fellBack = true;
+      }
     } catch (err) {
       if (id !== runId.current) return;
       clearTimers();
@@ -172,6 +182,8 @@ export default function ScanPage() {
       return;
     }
     if (id !== runId.current) return;
+    if (fellBack)
+      setError("The AI model couldn't be reached just now, so this is the result saved from an earlier AI run.");
 
     setLooping(false);
     setResult(data);
@@ -344,11 +356,9 @@ export default function ScanPage() {
                     </>
                   )}
                 </Button>
-                {source.kind === "upload" && (
-                  <p className="text-xs text-muted-foreground">
-                    A digital bank statement PDF is read instantly. Anything else goes to the AI model, which can take 10 to 20 seconds.
-                  </p>
-                )}
+                <p className="text-xs text-muted-foreground">
+                  A digital bank statement PDF is read instantly. Anything else is read live by the AI model, which can take 10 to 20 seconds.
+                </p>
               </div>
               <p className="text-[11px] text-muted-foreground">
                 The sweep is a visual guide. The document is read in one go.

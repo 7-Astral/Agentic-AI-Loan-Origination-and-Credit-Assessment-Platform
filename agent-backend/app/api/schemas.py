@@ -221,6 +221,25 @@ class RiskProfileOut(BaseModel):
     factors: list[RiskFactorOut] = []
 
 
+class BankPolicyCheckItemOut(BaseModel):
+    category: str
+    label: str
+    policy_rule: str
+    status: str
+    applicant_value: str | None = None
+    detail: str
+
+
+class BankPolicyCheckOut(BaseModel):
+    status: str
+    bank: str
+    loan_type: str | None = None
+    source: str
+    data_status: str
+    checks: list[BankPolicyCheckItemOut] = []
+    summary: dict[str, int] = {}
+
+
 class ApplicationReportOut(BaseModel):
     session_id: str
     bank_id: str
@@ -244,6 +263,7 @@ class ApplicationReportOut(BaseModel):
     applicant_summary: list[ApplicantFactOut] = []
     key_figures: list[KeyFigureOut] = []
     policy_comparison: list[PolicyComparisonOut] = []
+    bank_policy_check: BankPolicyCheckOut | None = None
     documents: list[DocumentSummaryOut] = []
     verifications: list[VerificationOut] = []
     transcript: list[TranscriptMessageOut] = []
@@ -261,3 +281,34 @@ class ApplicationSummaryOut(BaseModel):
 class ApplicationListOut(BaseModel):
     applications: list[ApplicationSummaryOut]
     total: int
+
+class PolicyAskRequest(BaseModel):
+    question: str = Field(min_length=2, max_length=1000)
+    bank: str | None = None
+    loan_type: str | None = None
+    top_k: int = Field(default=5, ge=1, le=10)
+
+
+class PolicySourceOut(BaseModel):
+    bank: str
+    loan_type: str
+    category: str
+    content: str
+    source: str
+    data_status: str
+
+
+class PolicyAskResponse(BaseModel):
+    answer: str
+    sources: list[PolicySourceOut]
+
+
+class PolicyIngestResponse(BaseModel):
+    status: str
+    data_type: str
+    chunks_created: int
+
+
+class PolicyFiltersOut(BaseModel):
+    banks: list[str]
+    loan_types: list[str]

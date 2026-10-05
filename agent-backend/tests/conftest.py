@@ -1,34 +1,10 @@
-"""Shared test fixtures for services/agent-backend.
-
-Runs against a REAL Postgres database for the operational read-model
-(app.services.operational / app.models.application) — same reasoning as
-services/api's suite: Postgres-specific types, and this is what actually
-runs in production. Point TEST_APP_DATABASE_URL at a throwaway database
-before running pytest; this file creates and drops the operational/identity
-schemas in that database, so never point it at a real one.
-
-The LangGraph control flow (discovery.py / graph.py) is tested with the
-graphs' own default MemorySaver checkpointer instead of the real
-AsyncPostgresSaver the app uses in production (see app.backend's lifespan)
-— MemorySaver keeps state in the Python process for the life of one test's
-graph object, which is exactly what a test needs and avoids depending on a
-second, LangGraph-managed set of Postgres tables.
-
-Two things that would otherwise need a real network call are always
-stubbed: the Gemini LLM (app.core.llm.get_llm, bound separately into
-discovery.py / extractor.py / questioner.py) and the catalog/assessment
-HTTP client (the app.services.core_banking.core_banking singleton). See
-the `fake_llm` and `fake_catalog` fixtures below.
-"""
 import os
 
 os.environ["APP_DATABASE_URL"] = os.environ.get(
     "TEST_APP_DATABASE_URL",
     "postgresql+asyncpg://postgres:postgres@localhost:5432/agent_backend_test",
 )
-# Never read a real dev/prod .env for these — conftest.py sets
-# APP_DATABASE_URL unconditionally above and would otherwise run against
-# mismatched app secrets/keys.
+
 os.environ["JWT_SECRET"] = "test-secret"
 os.environ["JWT_ALGORITHM"] = "HS256"
 os.environ["CATALOG_API_KEY"] = "test-catalog-key"
@@ -70,6 +46,7 @@ async def _schema():
     async with engine.begin() as conn:
         await conn.execute(text("CREATE SCHEMA IF NOT EXISTS operational"))
         await conn.execute(text("CREATE SCHEMA IF NOT EXISTS identity"))
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
     yield
@@ -113,24 +90,7 @@ class _FakeMessage:
 
 
 class FakeLLM:
-    """A drop-in for ChatGoogleGenerativeAI.
 
-    discovery.py's classify_type / classify_category / select nodes each
-    call the LLM exactly once per turn (they never call interrupt()
-    themselves), so those are served off a plain ordered queue.
-
-    graph.py's ask_node is different: it calls the LLM *before* calling
-    interrupt() inside the same node — and because a LangGraph node that
-    calls interrupt() re-runs from the top of the function on every resume
-    (see the comment in discovery.py's present_node), ask_node's LLM call
-    fires TWICE per slot: once on the turn that pauses, and again
-    (discarded) on the turn that resumes it, before ingest_node's own
-    extract() call. A fixed ordered queue can't express that without
-    duplicating every entry, and silently breaks the moment that doubling
-    is ever fixed — so ask()/extract() calls are routed by slot id instead
-    (found in the request payload) via `ask_texts` / `extract_responses`,
-    keyed by slot id and reusable across repeated calls for the same slot.
-    """
 
     def __init__(self):
         self.calls: list[list] = []

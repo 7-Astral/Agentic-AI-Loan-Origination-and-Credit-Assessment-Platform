@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { useState } from "react";
 import { IBM_Plex_Mono } from "next/font/google";
 import { BudgetWaterfall, FiveCRadar } from "./ReportCharts";
-import type { AssessmentReport, ChatReport, FiveC, LoanApplicationOut } from "@/lib/api";
+import type { AssessmentReport, BankPolicyCheckStatus, ChatReport, FiveC, LoanApplicationOut } from "@/lib/api";
 import {
   ANSWER_GROUPS,
   TIER,
@@ -413,6 +413,68 @@ function PolicyChecks({ assessment }: { assessment: AssessmentReport }) {
   );
 }
 
+const BANK_POLICY_STATUS: Record<BankPolicyCheckStatus, { label: string; tone: keyof typeof TIER_PILL; row: string }> = {
+  pass: { label: "Pass", tone: "emerald", row: "" },
+  exception: { label: "Exception", tone: "red", row: "bg-[#fdf1f0]" },
+  review: { label: "Review", tone: "amber", row: "bg-[#fdf6e7]" },
+  no_data: { label: "No data", tone: "slate", row: "" },
+  not_applicable: { label: "N/A", tone: "slate", row: "" },
+};
+
+function BankPolicyCheckCard({ assessment }: { assessment: AssessmentReport }) {
+  const result = assessment.bank_policy_check;
+  if (!result) return null;
+  const { summary } = result;
+
+  return (
+    <div className={ui.panel}>
+      <PanelHeader
+        title="Bank policy check"
+        aside={
+          result.status === "ok"
+            ? `${summary.pass} pass · ${summary.exception} exception${summary.exception === 1 ? "" : "s"} · ${summary.review} to review`
+            : undefined
+        }
+      />
+      {result.status === "ok" ? (
+        <>
+          <ul>
+            {result.checks.map((c) => {
+              const status = BANK_POLICY_STATUS[c.status];
+              return (
+                <li
+                  key={c.category}
+                  className={`flex items-start justify-between gap-4 border-b border-[#e3e6ea] px-4 py-2.5 text-[14px] last:border-b-0 ${status.row}`}
+                >
+                  <div className="min-w-0">
+                    <p className="text-[#1b1e23]">
+                      {c.label}
+                      {c.applicant_value && <span className="text-[#5d6470]"> · {c.applicant_value}</span>}
+                    </p>
+                    <p className="text-[12px] text-[#343a42]">{c.detail}</p>
+                    <p className={`text-[12px] ${ui.muted}`}>Policy: {c.policy_rule}</p>
+                  </div>
+                  <Pill tone={status.tone}>{status.label}</Pill>
+                </li>
+              );
+            })}
+          </ul>
+          <p className={`border-t border-[#e3e6ea] px-4 py-2.5 text-[12px] ${ui.muted}`}>
+            Checked against {result.bank} · {result.loan_type} ({result.source}, demo policy data). For reference only. It does not
+            change the score or the recommendation.
+          </p>
+        </>
+      ) : (
+        <p className={`px-4 py-3 text-[13px] ${ui.muted}`}>
+          {result.status === "not_loaded"
+            ? "Bank policy data has not been loaded yet. Run the policy ingest step from the README."
+            : `No bank policy found for ${result.loan_type ?? "this product"} at ${result.bank}.`}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function KeyFigures({ assessment }: { assessment: AssessmentReport }) {
   if (assessment.key_figures.length === 0) return null;
   return (
@@ -467,6 +529,7 @@ export function CreditAssessmentTab({
           <PolicyChecks assessment={assessment} />
           <KeyFigures assessment={assessment} />
         </div>
+        <BankPolicyCheckCard assessment={assessment} />
       </div>
       <div className="border-t border-[#e3e6ea]">
         {FIVE_C_ORDER.map((c) => {

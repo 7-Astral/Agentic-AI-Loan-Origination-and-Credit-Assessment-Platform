@@ -42,6 +42,11 @@ class Settings(BaseSettings):
     langgraph_db_url: str = "postgresql://postgres:admin@localhost:5432/loan_origination"
     app_database_url: str = "postgresql+asyncpg://postgres:admin@localhost:5432/loan_origination"    
 
+    policy_csv_path: str = "../data/policies/banks_policy.csv"
+    policy_embedding_model: str = "BAAI/bge-small-en-v1.5"
+    policy_embedding_cache_dir: str = ""
+    policy_benchmark_bank: str = "Great Southern Bank"
+
     app_env: str = "local"
     log_level: str = "INFO"
 

@@ -26,6 +26,8 @@ from app.api.assessment import router as assessment_router
 from app.api.applications_admin import router as applications_admin_router
 from app.api.playground import router as playground_router
 from app.api.playground_documents import router as playground_documents_router
+from app.api.policy import router as policy_router
+from app.models.policy import PolicyChunk
 
 settings = get_settings()
 
@@ -63,6 +65,7 @@ app.include_router(playground_router)
 app.include_router(playground_documents_router)
 app.include_router(report_router)
 app.include_router(info_requests_router)
+app.include_router(policy_router)
 
 @app.get("/health")
 def health():

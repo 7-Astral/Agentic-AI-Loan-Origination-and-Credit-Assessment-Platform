@@ -1,321 +1,169 @@
-# Loan Origination Platform — v5 (chat agent: conversational intake, document OCR, Five C's assessment)
+# Agentic AI Loan Origination and Credit Assessment Platform
 
-Full-stack build: Next.js frontend, FastAPI backend, PostgreSQL database, JWT
-auth, a polished responsive UI, and three working portals — Admin, Bank
-staff, and Customer — all backed by real data. As of v5 the customer portal
-also offers a real conversational intake flow (`/customer/chat`), backed by
-a separate LangGraph chat-agent service that does genuine document OCR and
-Five C's credit assessment, converging on the same deterministic
-auto-approval/escalation routing as the plain form. See "What's new in v5"
-below.
+A loan origination system with three portals (customer, bank staff, admin).
+Customers apply by chatting with an assistant, upload their documents, and the
+application goes to bank staff with a Five C's credit assessment report.
 
-## What's new in v4
+The AI handles the conversation and reads documents. The assessment is
+rule based. Every decision is made by a staff member.
 
-- **Bank position ladder**: each bank now has its own configurable approval
-  hierarchy (`bank_positions` — e.g. Loan Officer → Credit Manager → CFO →
-  CEO → Board), seeded per bank with a title, rank, an approval limit
-  (`max_approval_amount`, nullable = unlimited), and two permission flags:
-  `can_manage_staff` and `can_manage_products`. Nothing about the hierarchy
-  is hardcoded — an admin (or any staff member with `can_manage_staff`) can
-  shape it differently per bank.
-- **Bank self-service portal** (`/staff`): staff log in and land in a
-  dedicated portal scoped to their own bank. What they can do depends on
-  their position:
-  - **Team** (gated on `can_manage_staff`) — register new staff for the bank,
-    assign them a position at creation time, and **deactivate/reactivate**
-    staff accounts (soft-delete, not a hard row delete — see below).
-  - **Products** and **Policies** (gated on `can_manage_products`) — add
-    loan products and auto-approval policies for the bank.
-  - **Applications** — every application submitted to the bank, with status
-    and (if escalated) which position needs to approve it next.
-  - **Notifications** — a bell with an unread badge; alerts land here when
-    an application needs that staff member's position to approve it.
-  A staff member without a position, or whose position lacks a permission,
-  sees a "Restricted" message instead of the management UI — enforced both
-  in the UI (nav links are hidden) and on the API (403 if bypassed).
-- **Deterministic decision routing** (`app/core/lending_logic.py`): every
-  submitted application is checked against the bank's lending policy first.
-  Under the auto-approval threshold → approved immediately. Over it → routed
-  to the lowest position on the bank's ladder whose approval limit actually
-  covers the amount, and every staff member holding that position gets a
-  notification. This is deliberately a plain deterministic function, not an
-  LLM call — it's the seed of the Decision Agent (FR8) for a later phase.
-- **Customer loan application flow** (`/customer`): browse products across
-  banks, apply with an amount/tenure/purpose, and see the outcome
-  immediately — auto-approved, or under review with the position it's
-  pending on. A running list of "My applications" shows status for every
-  past submission.
-- **Admin → staff creation now includes position assignment**: the existing
-  Admin "Add staff" modal gained a Position dropdown (scoped to the chosen
-  bank), so admins can create fully-configured staff accounts too, not just
-  bank self-service.
-- **Removing staff = deactivate, not delete**: accounts are never hard-deleted
-  (they're referenced by past applications, decisions, and audit log entries,
-  which need to stay intact for compliance). Instead, both the Admin Users
-  page and the bank Team page have a Deactivate/Reactivate action per row:
-  - Deactivating flips `users.is_active` to `false`. That account can no
-    longer log in, immediately invalidates any JWT it's currently holding
-    (checked on every authenticated request, not just at login), and is
-    automatically skipped when the routing logic decides who to notify for
-    an escalation.
-  - Every deactivate/reactivate writes an `audit_logs` row.
-  - A staff member can never deactivate their own account (the button is
-    hidden on their own row) — otherwise the last `can_manage_staff` holder
-    at a bank could lock themselves out with no way back in.
-  - On the Team page this is gated the same way as everything else
-    (`can_manage_staff`); on the Admin Users page it works platform-wide,
-    across any bank or role.
-- Two new tables: `bank_positions` and `notifications`, plus new columns
-  (`users.position_id`, `escalations.escalated_to_position_id`) — see
-  `migrations/versions/e80fc8b39b2c_bank_hierarchy_and_notifications.py`.
+## What you need
 
-## What's new in v5 — the chat agent
+Docker Desktop is required. Nothing else has to be installed (no Node, no
+Python, no database).
 
-The plain "Apply for a loan" form is now joined by a real conversational
-intake flow at **`/customer/chat`** ("Chat with the assistant" on the
-customer portal), backed by a separate service, `agent-backend` —
-a LangGraph-based agent doing genuine discovery chat, structured interview,
-Gemini-vision document OCR, and a real Five C's credit assessment (capacity,
-capital, character, collateral, conditions), not a toy stub. It runs on its
-own port (8001) and its own Postgres schemas inside the same database, and
-hands every completed interview into the *same* `route_loan_decision` the
-plain form uses — so a chat-submitted application shows up for staff exactly
-like any other, correctly auto-approved or escalated and notified.
+- Download it from https://www.docker.com/products/docker-desktop
+- Works on Windows, Mac (Intel and Apple Silicon) and Linux
+- Open Docker Desktop and wait until it says it is running before you start
 
-`services/api` gained a small `/api/v1/...` router
-(`app/api/routes/core_banking.py`) that the agent reads the product catalog
-from and submits completed applications to, authenticated with a shared
-`SERVICE_API_KEY` rather than a user JWT (server-to-server). `loan_products`
-gained a few columns (`product_code`, `secured`, `rate_type`,
-`comparison_rate`, `establishment_fee`, `max_lvr`, `features`) so this
-platform's own table can fully satisfy that catalog contract on its own —
-see migration `0f8bc6a836fe`.
+The settings file `agent-backend/.env` is already included, so there is
+nothing to configure.
 
-Full details — why it's a separate service, how identity and the product
-catalog are bridged, and what's still split across the two systems — are in
-the project's `db-schema-design.md` (§8, "v5 — the chat agent integration").
-Quick facts worth knowing before you run it:
+## Setup
 
-- **Five services**: `services/api` (8000), `agent-backend` (8001),
-  `agent-backend`'s bundled `mock_core_banking` (9100 in Docker, 9000 natively; serves
-  document-requirement checklists / HEM policy / Five C's rules —
-  assessment configuration, kept separate from the staff-managed catalog),
-  `mock_bureau` (credit bureau stand-in for the Character metrics; 9200 in
-  Docker, 9001 natively) and `apps/web` (3000). See "Running the chat agent" below.
-- **Needs a Gemini API key.** The chat, document OCR and assessment agents
-  call Google's Gemini API (`GEMINI_API_KEY` in `agent-backend/.env`)
-  — without a working key (and network access to
-  `generativelanguage.googleapis.com`), the plain form still works fine, but
-  `/customer/chat` will show connection errors past the opening greeting.
-- **One bank per chat deployment (for now).** `PLATFORM_BANK_ID` in
-  `agent-backend/.env` picks which bank's catalog the assistant
-  offers — like a bank's own branded assistant, not a cross-bank
-  marketplace. Multi-bank chat is a natural next step, not a redesign.
-- Signing in with a customer account and using the chat ties the resulting
-  application to that real account; you can also use the chat signed out to
-  explore discovery/interview, but submitting a real application requires
-  being signed in as a customer.
+1. Install Docker Desktop and make sure it is running.
 
-## Quickest path — Docker only
+2. Open a terminal in the project folder and start everything. The first run
+   takes a few minutes.
 
-No Node/Python needed locally.
+   ```bash
+   docker compose up --build
+   ```
+
+3. In a second terminal, create the tables and load the demo data. This is
+   only needed the first time.
+
+   ```bash
+   docker compose exec api alembic upgrade head
+   docker compose exec api python -m scripts.seed
+   docker compose exec mock-core-banking alembic -c mock_core_banking/alembic.ini upgrade head
+   docker compose exec mock-core-banking python -m mock_core_banking.seed
+   docker compose exec mock-core-banking python -m mock_core_banking.seed_rules
+   docker compose exec agent-backend alembic -c app/alembic.ini upgrade head
+   docker compose exec agent-backend python -m scripts.ingest_policies
+   ```
+
+   The last command loads the bank policy file into the policy search. It
+   takes a minute or two the first time.
+
+4. Open http://localhost:3000/login
+
+## Demo logins
+
+| Role | Email | Password |
+|---|---|---|
+| Admin | admin@bank.com | Admin@123 |
+| Credit Manager | manager@bank.com | Manager@123 |
+| Loan Officer | officer@bank.com | Officer@123 |
+| Customer | customer@bank.com | Customer@123 |
+
+These are for the demo only.
+
+## Pages
+
+All pages are served from http://localhost:3000
+
+### General
+
+| URL | What it is for |
+|---|---|
+| `/` | Landing page |
+| `/login` | Sign in. Sends each role to its own portal |
+| `/register` | Create a new customer account |
+
+### Customer
+
+| URL | What it is for |
+|---|---|
+| `/customer` | Customer home. Start or continue an application, see past applications, notifications and requests from the bank |
+| `/customer/chat` | Chat with the loan assistant: pick a product, answer the questions, upload documents, submit |
+| `/customer/chat?session=<id>` | Reopen a submitted application to answer a request from the bank |
+
+### Bank staff
+
+| URL | What it is for |
+|---|---|
+| `/staff` | Staff overview for their own bank |
+| `/staff/applications` | All applications submitted to the bank |
+| `/staff/applications/<id>/report` | Assessment report: scores, risks, conditions, documents, chat transcript. Staff record the decision here and can ask the applicant for more information or a document |
+| `/staff/team` | Add, edit and deactivate staff (managers only) |
+| `/staff/products` | Loan products for the bank (managers only) |
+| `/staff/policies` | Lending policies for the bank (managers only) |
+| `/staff/notifications` | Notifications for the signed in staff member |
+| `/staff/audit` | Audit log for the bank |
+
+### Admin
+
+| URL | What it is for |
+|---|---|
+| `/admin` | Platform overview |
+| `/admin/banks` | Banks on the platform |
+| `/admin/users` | All users. Create staff, deactivate or reactivate accounts |
+| `/admin/products` | Loan products across banks |
+| `/admin/policies` | Lending policies across banks |
+| `/admin/audit` | Platform audit log |
+
+### Playground (no login needed)
+
+| URL | What it is for |
+|---|---|
+| `/playground` | Try the credit assessment with sample applicants or your own numbers |
+| `/playground/documents` | Try document reading and see how it is checked against the applicant's answers |
+| `/playground/scan` | Watch a document being scanned and its values pulled out |
+
+## Services
+
+| Service | URL | What it does |
+|---|---|---|
+| Web app | http://localhost:3000 | Next.js frontend |
+| Platform API | http://localhost:8000/docs | Logins, banks, products, policies, staff, applications, decisions |
+| Agent backend | http://localhost:8001/docs | Chat interview, document reading, Five C's assessment |
+| Mock core banking | http://localhost:9100/docs | Interview questions, document checklists, assessment rules and policy |
+| Mock credit bureau | http://localhost:9200/docs | Stand in credit bureau |
+| Postgres | localhost:5433 | Database (user `postgres`, password `postgres`) |
+
+## Project layout
+
+```
+apps/web          Next.js frontend
+services/api      Platform API (FastAPI)
+agent-backend     Chat agent, document agent, assessment engine (FastAPI + LangGraph)
+  mock_core_banking   Assessment configuration service
+  mock_bureau         Credit bureau stand in
+docker-compose.yml
+```
+
+## A typical run through
+
+1. Sign in as the customer and open the chat.
+2. Tell the assistant what you need, pick a product and answer the questions.
+3. Upload the documents it asks for and submit.
+4. Sign in as the Credit Manager and open the application's report.
+5. Ask the customer for something if needed, then record the decision.
+6. Sign back in as the customer to see the request or the outcome.
+
+## Common problems
+
+- **Chat says it cannot reach the assistant.** Check `GEMINI_API_KEY` in
+  `agent-backend/.env`, then run `docker compose restart agent-backend`.
+- **AI quota reached.** The free Gemini tiercan has a daily limit. Wait or use
+  another key.
+- **Document upload fails because of a rate limit.** Skip the upload and
+  submit the application anyway. The credit assessment still runs, so you can
+  review that part.
+- **Changed code in `agent-backend/app` but nothing happened.** That service
+  does not auto reload. Run `docker compose restart agent-backend`.
+- **Login fails for the demo accounts.** The seed step has not been run. Run
+  the commands in step 3.
+- **Port already in use.** Stop whatever is using 3000, 8000, 8001, 9100,
+  9200 or 5433, or change the port in `docker-compose.yml`.
+
+## Stopping
 
 ```bash
-docker compose up --build
+docker compose down
 ```
 
-Once the containers are up, run migrations and seed (one-time — or again if
-you're upgrading from v3, see "Upgrading from v3" below):
-```bash
-docker compose exec api alembic upgrade head
-docker compose exec api python -m scripts.seed
-docker compose exec mock-core-banking alembic -c mock_core_banking/alembic.ini upgrade head
-docker compose exec mock-core-banking python -m mock_core_banking.seed
-docker compose exec mock-core-banking python -m mock_core_banking.seed_rules
-docker compose exec agent-backend alembic -c app/alembic.ini upgrade head
-```
+Add `-v` to also delete the database.
 
-Then open **http://localhost:3000/login** and sign in with any of:
 
-| Role                          | Email               | Password       |
-|--------------------------------|---------------------|----------------|
-| Admin (platform-wide)          | admin@bank.com      | Admin@123      |
-| Staff — Credit Manager         | manager@bank.com    | Manager@123    |
-| Staff — Loan Officer           | officer@bank.com    | Officer@123    |
-| Customer                       | customer@bank.com   | Customer@123   |
-
-Admin lands on `/admin`. The Credit Manager lands on `/staff` with full bank
-self-service (Team, Products, Policies, Applications, Notifications). The
-Loan Officer lands on the same portal but only sees Overview, Applications
-and Notifications — Team/Products/Policies are hidden and blocked, since
-that position's `can_manage_staff`/`can_manage_products` are both `false`.
-The customer lands on `/customer` and can apply for a loan right away.
-
-**Change these passwords / regenerate the encryption key before this goes anywhere near a real deployment** — see "Security notes" below.
-
-### Upgrading from v3
-
-If you already have a v3 database running, you only need to run the new
-migration — your data is preserved:
-```bash
-docker compose exec api alembic upgrade head
-docker compose exec api python -m scripts.seed
-```
-The seed script is idempotent and safe to re-run. Note: the old
-`staff@bank.com` account from v3 no longer exists in the seed — it's been
-replaced with `manager@bank.com` (Credit Manager) and `officer@bank.com`
-(Loan Officer) so the position hierarchy has something to demonstrate. If
-you created other staff accounts under v3, they'll have `position_id = null`
-until you (or a manager) assign them one from the Team page.
-
-## Native setup (no Docker for the apps)
-
-### 1. Frontend
-```bash
-cd apps/web
-npm install
-```
-
-### 2. Backend
-```bash
-cd services/api
-python -m venv venv
-venv\Scripts\activate      # Windows
-# source venv/bin/activate  # macOS/Linux
-pip install -r requirements.txt
-cp .env.example .env
-```
-
-### 3. Start Postgres
-```bash
-docker compose up -d db
-```
-
-### 4. Migrate + seed
-```bash
-cd services/api
-alembic upgrade head
-python -m scripts.seed
-```
-
-### 5. Run both apps (two terminals)
-```bash
-cd services/api && uvicorn app.main:app --reload
-cd apps/web && npm run dev
-```
-
-## Running the chat agent (`agent-backend`)
-
-Optional but needed for `/customer/chat` — the plain form works without it.
-
-```bash
-cd agent-backend
-python -m venv venv && source venv/bin/activate   # or venv\Scripts\activate on Windows
-pip install -r requirements.txt
-cp .env.example .env   # fill in GEMINI_API_KEY, and PLATFORM_BANK_ID with a real bank's id
-                        # from `select id, name from banks;` — CATALOG_API_KEY must match
-                        # services/api's SERVICE_API_KEY (same dev default if you haven't changed it)
-```
-
-Run each service's migrations (they share the one Postgres database, in
-their own schemas, so this only needs doing once each):
-```bash
-alembic -c mock_core_banking/alembic.ini upgrade head
-alembic -c app/alembic.ini upgrade head
-python -m mock_core_banking.seed          # document requirements, HEM/shading policy
-python -m mock_core_banking.seed_rules    # Five C's rules
-```
-
-Then run the three extra services (three more terminals):
-```bash
-cd agent-backend && python -m uvicorn mock_core_banking.main:app --port 9000
-cd agent-backend && python -m uvicorn mock_bureau.main:app --port 9001
-cd agent-backend && python run.py   # the agent itself, port 8001
-```
-
-Set `NEXT_PUBLIC_AGENT_API_URL=http://localhost:8001` in `apps/web/.env.local`
-(see `.env.local.example`) so the frontend knows where to find it.
-
-## Project structure
-
-```
-apps/web/                 Next.js 14 frontend
-  app/login/, app/register/  Split-panel auth pages (AuthShell component)
-  app/admin/                  Admin portal (layout + Overview/Users/Products/Policies/Audit)
-  app/staff/                   Bank self-service portal:
-    layout.tsx                   Sidebar shell, permission-gated nav, notification bell
-    page.tsx                     Overview (position, approval limit, pending counts)
-    team/, products/, policies/  Permission-gated management pages (Add-* modals)
-    applications/                 All applications submitted to the bank
-    notifications/                 Position-targeted alerts, mark-as-read
-  app/customer/               Apply-for-a-loan form + "My applications" list
-  app/customer/chat/          Chat UI for the conversational intake flow (talks to agent-backend)
-  app/playground/             Developer tools against agent-backend (no login):
-    page.tsx                     Five C's assessment sandbox
-    documents/, scan/            Document extraction lab and animated scan view
-  lib/playground-api.ts       Fetch client for agent-backend's /api/v1/playground endpoints
-  components/kit/             shadcn-style primitives used only by the playground pages
-  lib/agent-api.ts            Typed fetch client for agent-backend (separate from lib/api.ts)
-  components/ui/               Shared UI kit — Button, Input/Field/Select, Card, Badge, Modal, Toast, Skeleton
-  components/icons.tsx          Small dependency-free inline SVG icon set
-  lib/api.ts                    Typed fetch client for the FastAPI backend
-  lib/auth-context.tsx           Auth state (token + user), login/register/logout
-  lib/staff-context.tsx           Bank positions + notifications for the staff portal
-
-services/api/              FastAPI backend
-  app/models/                SQLAlchemy models — 16 tables + bank_positions, notifications
-  app/schemas/                 Pydantic request/response schemas (schemas/bank.py is new)
-  app/api/routes/                auth.py, admin.py, bank.py (staff self-service), loans.py (customer)
-  app/core/                       config, JWT + password hashing, deps.py (role/permission checks),
-                                    lending_logic.py (auto-approve/escalate routing)
-  app/db/                          session, declarative base, EncryptedString custom type
-  migrations/                     Alembic — init + bank-hierarchy-and-notifications + v5 catalog-contract fields
-  scripts/seed.py                 Default data, demo logins, and the position ladder
-
-agent-backend/             LangGraph chat agent — discovery/interview, document OCR, Five C's assessment
-  app/agents/                 interaction/ (discovery + interview graphs), document/ (OCR + reconcile),
-                                assessment/ (Five C's metrics + rules engine)
-  app/api/                     interview.py (chat turns + /submit bridge), documents.py, assessment.py
-  app/services/core_banking.py  CatalogClient (→ services/api) + AssessmentConfigClient (→ mock_core_banking)
-  app/core/identity.py          Validates services/api's JWT to tie a session to a real customer
-  mock_core_banking/            Bundled service — document-requirement checklists, HEM/shading policy, rules
-  mock_bureau/                  Bundled credit-bureau stand-in (scenario-driven reports for Character)
-  app/alembic/, mock_core_banking/alembic/   Separate migration chains for the two schemas this service owns
-```
-
-## Security notes (read before this leaves your laptop)
-
-- `JWT_SECRET` and `FERNET_KEY` (in `app/core/config.py`, overridable via `.env`)
-  are dev placeholders committed for convenience. Generate real ones before any
-  shared or deployed use:
-  ```bash
-  python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-  ```
-- Sensitive fields (`users.phone`, `applicant_profiles.national_id`,
-  `applicant_profiles.monthly_income`) are encrypted at rest via the
-  `EncryptedString` column type — but only as strong as `FERNET_KEY`.
-- The seeded passwords are placeholders. Change them (or delete the seeded
-  users) before this is anything but a local demo.
-- Position/permission checks are enforced server-side
-  (`require_bank_permission` in `app/core/deps.py`) on every mutating bank
-  endpoint — the UI hiding a nav link is a convenience, not the security
-  boundary.
-
-## Roadmap
-
-Phases 1–3 (scaffold, real schema + migration, auth) and Phase 5 (Admin
-portal UI) are done. Phase 4/7 (loan application flow, deterministic
-auto-approval/escalation routing, position-based notifications) has two
-front doors now — the plain form and the chat agent — both converging on
-the same routing. Phase 6 (the LangGraph multi-agent layer: conversational
-intake, document OCR/verification, a Five C's credit assessment, a rules
-engine) is built and running as `agent-backend` (v5) — see "What's
-new in v5" above and `db-schema-design.md` §8 for the integration details
-and what's still split across the two systems. Still ahead: Phase 8 (AI
-configuration and integrations actually being written to by the app), a
-real external credit bureau (the Five C's assessment today uses declared +
-OCR'd document data, not a bureau pull — the adapter is built to be
-swappable, per the standing decision to keep that interface clean), and
-mirroring the chat agent's Five C's results into this platform's own
-`credit_assessments` table so staff can see the full assessment breakdown
-next to an escalated application, not just the routing outcome.

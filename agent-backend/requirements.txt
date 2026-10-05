@@ -19,6 +19,8 @@ psycopg[binary,pool]
 python-multipart
 simpleeval
 pdfplumber
+pgvector
+fastembed
 
 # Validates the JWT services/api issues at login (app/core/identity.py) —
 # must match services/api's own python-jose version.

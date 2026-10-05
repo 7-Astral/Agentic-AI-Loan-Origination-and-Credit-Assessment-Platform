@@ -219,6 +219,26 @@ export interface AssessmentReport {
     threshold_label: string;
     meets_threshold: boolean;
   }[];
+  bank_policy_check?: BankPolicyCheck | null;
+}
+
+export type BankPolicyCheckStatus = "pass" | "exception" | "review" | "no_data" | "not_applicable";
+
+export interface BankPolicyCheck {
+  status: "ok" | "no_policy" | "not_loaded";
+  bank: string;
+  loan_type: string | null;
+  source: string;
+  data_status: string;
+  checks: {
+    category: string;
+    label: string;
+    policy_rule: string;
+    status: BankPolicyCheckStatus;
+    applicant_value: string | null;
+    detail: string;
+  }[];
+  summary: Record<BankPolicyCheckStatus, number>;
 }
 
 export interface ApplicationDecisionPayload {

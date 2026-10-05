@@ -12,6 +12,7 @@ from app.core.db import Base
 import app.models.application 
 import app.models.documents 
 import app.models.identity  
+import app.models.policy
 
 DATABASE_URL = get_settings().app_database_url
 

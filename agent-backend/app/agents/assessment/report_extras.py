@@ -4,6 +4,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.policy.check import run_policy_check
 from app.services import operational
 from app.services.core_banking import core_banking
 
@@ -130,7 +131,7 @@ async def assemble_report_extras(
         except Exception:
             slot_labels = {}
 
-    return {
+    extras = {
         "applicant_summary": build_applicant_summary(filled, slot_labels),
         "key_figures": build_key_figures(metrics),
         "policy_comparison": build_policy_comparison(metrics, policy, product),
@@ -138,3 +139,5 @@ async def assemble_report_extras(
         "verifications": await operational.list_verifications(db, application_id),
         "transcript": await operational.list_transcript(db, application_id),
     }
+    extras["bank_policy_check"] = await run_policy_check(db, product, metrics, filled)
+    return extras

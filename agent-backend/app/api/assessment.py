@@ -147,6 +147,7 @@ async def get_application_report(request: Request, session_id: str, db: AsyncSes
         applicant_summary=result["applicant_summary"],
         key_figures=result["key_figures"],
         policy_comparison=result["policy_comparison"],
+        bank_policy_check=result["bank_policy_check"],
         documents=result["documents"],
         verifications=result["verifications"],
         transcript=result["transcript"],

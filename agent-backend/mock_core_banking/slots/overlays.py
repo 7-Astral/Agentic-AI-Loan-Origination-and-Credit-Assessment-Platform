@@ -100,46 +100,6 @@ INVESTMENT = _PROPERTY_BASE + [
          validation={"min": 0}, group="property"),
 ]
 
-BUSINESS = [
-    slot("business_name", "Registered business name", 5, "text",
-         "As registered", verification="asic_extract", group="business"),
-    slot("abn_or_acn", "ABN or ACN", 5, "text",
-         "Identifies the entity",
-         verification="asic_extract", group="business"),
-    slot("entity_structure", "Entity structure", 5, "choice",
-         "Drives which constituent documents are required",
-         options=["sole_trader", "partnership", "company", "trust"],
-         regulatory_basis="Entity verification", group="business"),
-    slot("entity_documents_note", "Constituent documents", 5, "text",
-         "Partnership agreement, trust deed or company constitution as applicable",
-         required_when="entity_structure in ('partnership', 'company', 'trust')",
-         verification="entity_documents", group="business"),
-    slot("years_trading", "Years trading", 5, "number",
-         "Minimum trading period is a policy screen",
-         validation={"min": 0},
-         verification="tax_return", group="business"),
-    slot("annual_turnover", "Annual turnover", 5, "currency",
-         "Most recent financial year",
-         validation={"min": 0},
-         verification="financial_statements", group="business"),
-    slot("industry", "Industry", 5, "text",
-         "Some industries are excluded by policy",
-         regulatory_basis="Industry exclusions", group="business"),
-    slot("use_of_funds", "Detailed use of funds", 5, "text",
-         "Specific, not general — this is the strongest screen in business lending",
-         regulatory_basis="NCCP requirements and objectives", group="business"),
-    slot("existing_business_lending", "Existing business lending", 5, "text",
-         "Cards, loans, overdrafts, equipment finance, guarantees, rental bonds",
-         group="business"),
-    slot("security_offered", "Security offered", 5, "text",
-         "Property, business assets, or unsecured",
-         group="business"),
-    slot("director_guarantee_accepted", "Director guarantee understood", 5, "boolean",
-         "Directors are normally required to guarantee personally, which means "
-         "their personal position is assessed too — confirm they understand",
-         regulatory_basis="Guarantor disclosure", group="business"),
-]
-
 OVERLAYS_BY_PRODUCT = {
     "PL-STD-001": [],
     "PL-SEC-002": [
@@ -154,6 +114,5 @@ OVERLAYS_BY_PRODUCT = {
     "HL-FIX-011": HOME,
     "VL-NEW-020": VEHICLE,
     "VL-USED-021": VEHICLE,
-    "BL-TERM-030": BUSINESS,
     "IL-PROP-040": INVESTMENT,
 }

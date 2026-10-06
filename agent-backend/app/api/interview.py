@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agents.assessment.run import run_retail_assessment
 from app.agents.interaction.advisor import answer_question
 from app.agents.interaction.corrections import apply_correction
+from app.agents.interaction.prefill import load_profile_prefill
 from app.agents.interaction.resolver import progress as compute_progress
 from app.api.schemas import (
     ApplicationResponse,
@@ -104,12 +105,15 @@ async def _start_interview(request: Request, session_id: str, product_code: str)
     bank_id = await get_bank_id(session_id)
     schema = await _load_schema(product_code, bank_id)
     await set_application_product(session_id, product_code)
+    filled, provenance = await load_profile_prefill(await get_applicant_id(session_id), schema["slots"])
 
     result = await interview_graph.ainvoke(
         {
             "product_code": schema["product_code"],
             "schema_version": schema["schema_version"],
             "slots": schema["slots"],
+            "filled": filled,
+            "provenance": provenance,
             "turn": 0,
         },
         _interview_config(session_id),

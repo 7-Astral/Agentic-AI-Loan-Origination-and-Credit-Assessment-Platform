@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps import require_service_api_key
 from app.core.lending_logic import route_loan_decision
 from app.db.session import get_db
+from app.models.applicant_profile import ApplicantProfile
 from app.models.audit_log import AuditLog
 from app.models.bank import Bank
 from app.models.enums import UserRole
@@ -32,12 +33,6 @@ from app.schemas.core_banking import SubmitApplicationRequest, SubmitApplication
 
 router = APIRouter(prefix="/api/v1", tags=["core-banking"], dependencies=[Depends(require_service_api_key)])
 
-# Maps this platform's product_type values onto the loan_type/category
-# vocabulary mock_core_banking's document-requirements, policy and rules
-# config already use (see mock_core_banking/seed.py in agent-backend).
-# "education" has no dedicated config there, so it falls back to the
-# closest fit (personal/general, unsecured general-purpose) — an explicit,
-# documented simplification, not a silent gap.
 LOAN_TYPE_INFO = {
     "personal": {"name": "Personal Loan", "description": "Unsecured or secured loan for personal use."},
     "home": {"name": "Home Loan", "description": "Loan to buy, refinance, or invest in residential property."},
@@ -167,6 +162,23 @@ async def get_product(product_code: str, bank_id: uuid.UUID = Query(...), db: As
     if p is None:
         raise HTTPException(404, f"Product '{product_code}' not found")
     return _product_to_dict(p)
+
+
+@router.get("/customers/{user_id}/profile")
+async def get_customer_profile(user_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    user = await db.get(User, user_id)
+    if user is None or user.role != UserRole.CUSTOMER.value:
+        raise HTTPException(404, "Customer not found")
+
+    result = await db.execute(select(ApplicantProfile).where(ApplicantProfile.user_id == user_id))
+    profile = result.scalar_one_or_none()
+    return {
+        "full_name": user.full_name,
+        "email": user.email,
+        "phone": user.phone,
+        "date_of_birth": profile.dob.isoformat() if profile and profile.dob else None,
+        "address": profile.address if profile else None,
+    }
 
 
 @router.post("/applications", response_model=SubmitApplicationResponse, status_code=201)

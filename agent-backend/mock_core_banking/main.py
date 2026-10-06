@@ -125,22 +125,17 @@ async def get_product_requirements(
     if p is None:
         raise HTTPException(404, f"Product '{product_code}' not found")
 
-    schema = schema_for(p.product_code)
+    schema = schema_for(p.product_code, loan_type=p.loan_type_code, category=p.category_code)
     schema["loan_type"] = p.loan_type_code
     return schema
 
 
 @app.get("/api/v1/interview-schema/{product_code}")
-async def get_interview_schema(product_code: str, loan_type: str = Query(...)):
-    """Interview slot schema for a product, keyed purely by product_code —
-    no DB lookup. Lets a product sourced from an external catalog (the main
-    platform's services/api) get an interview schema here without also
-    existing as a row in this service's own products table. The caller
-    already knows loan_type (from that catalog) and passes it through so
-    unmatched product codes still get a sensible base interview (see
-    slots/registry.py: unknown codes get the base slots, just no
-    product-specific overlay)."""
-    schema = schema_for(product_code)
+async def get_interview_schema(
+    product_code: str, loan_type: str = Query(...), category: str | None = Query(default=None)
+):
+    
+    schema = schema_for(product_code, loan_type=loan_type, category=category)
     schema["loan_type"] = loan_type
     return schema
 

@@ -44,6 +44,9 @@ class CatalogClient(_BaseClient):
             self._resolved_bank_id = data["id"]
         return self._resolved_bank_id
 
+    async def get_customer_profile(self, customer_id: str) -> dict:
+        return await self._get(f"/api/v1/customers/{customer_id}/profile")
+
     async def list_loan_types(self, bank_id: str | None = None) -> list[dict]:
         resolved = bank_id or await self._default_bank_id_async()
         data = await self._get("/api/v1/loan-types", params={"bank_id": resolved})
@@ -103,11 +106,13 @@ class AssessmentConfigClient(_BaseClient):
         s = get_settings()
         super().__init__(s.core_banking_base_url, s.core_banking_api_key, s.core_banking_timeout)
 
-    async def get_interview_schema(self, product_code: str, loan_type: str, bank_id: str = DEFAULT_BANK_ID) -> dict:
-        return await self._get(
-            f"/api/v1/interview-schema/{product_code}",
-            params={"loan_type": loan_type, "bank_id": bank_id},
-        )
+    async def get_interview_schema(
+        self, product_code: str, loan_type: str, category: str | None = None, bank_id: str = DEFAULT_BANK_ID
+    ) -> dict:
+        params = {"loan_type": loan_type, "bank_id": bank_id}
+        if category:
+            params["category"] = category
+        return await self._get(f"/api/v1/interview-schema/{product_code}", params=params)
 
     async def get_document_requirements(
         self, loan_type: str, category: str, bank_id: str = DEFAULT_BANK_ID
@@ -149,6 +154,9 @@ class CoreBankingClient:
             loan_type=loan_type, category=category, bank_id=None if bank_id == DEFAULT_BANK_ID else bank_id
         )
 
+    async def get_customer_profile(self, customer_id: str) -> dict:
+        return await self.catalog.get_customer_profile(customer_id)
+
     async def get_product(self, product_code: str, bank_id: str = DEFAULT_BANK_ID) -> dict:
         return await self.catalog.get_product(product_code, bank_id=None if bank_id == DEFAULT_BANK_ID else bank_id)
 
@@ -159,7 +167,9 @@ class CoreBankingClient:
     async def get_product_requirements(self, product_code: str, bank_id: str = DEFAULT_BANK_ID) -> dict:
        
         product = await self.get_product(product_code, bank_id=bank_id)
-        return await self.assessment.get_interview_schema(product_code, loan_type=product["loan_type"])
+        return await self.assessment.get_interview_schema(
+            product_code, loan_type=product["loan_type"], category=product.get("category")
+        )
 
     async def get_document_requirements(
         self, loan_type: str, category: str, bank_id: str = DEFAULT_BANK_ID

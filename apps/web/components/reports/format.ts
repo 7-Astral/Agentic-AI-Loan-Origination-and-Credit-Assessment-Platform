@@ -76,6 +76,24 @@ const METRIC_LABELS: Record<string, string> = {
   industry_sector_risk: "Industry sector risk",
   hem_benchmark: "HEM benchmark",
   age_at_maturity: "Age at loan maturity",
+  // Business loans
+  dscr: "Debt service coverage ratio (DSCR)",
+  icr: "Interest coverage ratio (ICR)",
+  ebit: "Earnings before interest and tax (EBIT)",
+  ebitda: "EBITDA (cash flow for debt service)",
+  total_debt_service: "Total debt service",
+  debt_to_equity: "Debt-to-equity (leverage)",
+  current_ratio: "Current ratio (liquidity)",
+  security_value: "Security value",
+  security_coverage_pct: "Security coverage",
+  security_type_risk: "Security type risk",
+  trading_history_stability: "Trading history",
+  tax_compliance: "Tax compliance",
+  industry_concentration_status: "Industry concentration",
+  turnover_trend_stability: "Turnover trend",
+  stressed_dscr: "Stressed DSCR (cash-flow shock)",
+  projected_dscr: "Projected DSCR (growth haircut)",
+  entity_structure_review: "Entity structure review",
 };
 
 export function metricLabel(metric: string) {
@@ -121,6 +139,9 @@ export const ANSWER_GROUPS: { id: string; label: string }[] = [
   { id: "assets", label: "Assets" },
   { id: "loan", label: "Loan" },
   { id: "purpose", label: "Purpose" },
+  { id: "business", label: "Business" },
+  { id: "business_financials", label: "Business financials" },
+  { id: "security", label: "Security" },
   { id: "consent", label: "Consent" },
   { id: "confirmation", label: "Confirmation" },
 ];

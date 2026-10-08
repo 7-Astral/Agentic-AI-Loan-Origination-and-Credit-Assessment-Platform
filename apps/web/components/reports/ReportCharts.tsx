@@ -1,6 +1,8 @@
 import type { AssessmentReport, FiveC } from "@/lib/api";
 import { fmtMoney, humanize } from "./format";
 
+type Step = { label: string; value: number; kind: "total" | "minus" | "plus" | "result" };
+
 
 const BRAND = "#1f5fa8";
 const GRID = "#d6d9de";
@@ -70,8 +72,6 @@ export function FiveCRadar({ assessment }: { assessment: AssessmentReport }) {
     </figure>
   );
 }
-
-type Step = { label: string; value: number; kind: "total" | "minus" | "result" };
 
 export function BudgetWaterfall({ assessment }: { assessment: AssessmentReport }) {
   const figure = (metric: string) => {
@@ -150,6 +150,97 @@ export function BudgetWaterfall({ assessment }: { assessment: AssessmentReport }
       </svg>
       <figcaption className="mt-1 text-center text-[12px] text-[#5d6470]">
         Monthly. {fmtMoney(surplus)} left after the new repayment — {Math.round((surplus / income) * 100)}% of assessed net income.
+      </figcaption>
+    </figure>
+  );
+}
+
+// The "add-backs" chain a credit analyst spreads from the financial statements:
+// net profit before tax -> + interest expense = EBIT -> + depreciation/amortisation
+// = EBITDA, the figure debt service is actually measured against.
+export function CashFlowWaterfall({
+  netProfit,
+  interestExpense,
+  ebit,
+  depreciation,
+  ebitda,
+}: {
+  netProfit: number | null;
+  interestExpense: number | null;
+  ebit: number | null;
+  depreciation: number | null;
+  ebitda: number | null;
+}) {
+  if (netProfit === null || ebitda === null) {
+    return (
+      <p className="py-10 text-center text-[13px] text-[#8a909a]">
+        Cash-flow add-back figures aren&apos;t available for this application.
+      </p>
+    );
+  }
+
+  const steps: Step[] = [
+    { label: "Net profit before tax", value: netProfit, kind: "total" },
+    ...(interestExpense !== null ? [{ label: "+ Interest expense", value: interestExpense, kind: "plus" as const }] : []),
+    { label: "EBIT", value: ebit ?? netProfit + (interestExpense ?? 0), kind: "result" },
+    ...(depreciation !== null ? [{ label: "+ Depreciation", value: depreciation, kind: "plus" as const }] : []),
+    { label: "EBITDA", value: ebitda, kind: "result" },
+  ];
+
+  const width = 360;
+  const height = 300;
+  const top = 24;
+  const bottom = 44;
+  const plot = height - top - bottom;
+  const barW = (width - 20) / steps.length - 10;
+  // A break-even or loss-making business can have EBITDA <= 0 — guard the
+  // scale denominator so bars stay finite instead of NaN/Infinity.
+  const scaleMax = Math.max(ebitda, netProfit, 1);
+  const scale = (v: number) => (Math.max(v, 0) / scaleMax) * plot;
+
+  let running = 0;
+  const bars = steps.map((s, i) => {
+    const x = 10 + i * ((width - 20) / steps.length) + 5;
+    let y0: number;
+    let h: number;
+    if (s.kind === "plus") {
+      h = scale(s.value);
+      y0 = top + plot - scale(running) - h;
+      running += s.value;
+    } else {
+      h = scale(s.value);
+      y0 = top + plot - h;
+      running = s.value;
+    }
+    const fill = s.kind === "total" ? BRAND : s.kind === "result" ? "#2e844a" : "#b0b6bf";
+    return { ...s, x, y0, h: Math.max(h, 1), fill };
+  });
+
+  return (
+    <figure className="flex flex-col items-center">
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-auto w-full max-w-[360px]" role="img" aria-label="Cash-flow add-back waterfall chart">
+        <line x1={0} y1={top + plot} x2={width} y2={top + plot} stroke={GRID} />
+        {bars.map((b, i) => (
+          <g key={b.label}>
+            {i > 0 && b.kind === "plus" && (
+              <line x1={bars[i - 1].x + barW} y1={b.y0 + b.h} x2={b.x} y2={b.y0 + b.h} stroke={MUTED} strokeDasharray="3 3" />
+            )}
+            <rect x={b.x} y={b.y0} width={barW} height={b.h} fill={b.fill} />
+            <text x={b.x + barW / 2} y={b.y0 - 6} textAnchor="middle" fontSize="11" fontWeight="600" fill={TEXT}>
+              {fmtMoney(b.value)}
+            </text>
+            <text x={b.x + barW / 2} y={top + plot + 16} textAnchor="middle" fontSize="10.5" fill={TEXT}>
+              {b.label.split(" ").map((word, w) => (
+                <tspan key={word} x={b.x + barW / 2} dy={w === 0 ? 0 : "1.2em"}>
+                  {word}
+                </tspan>
+              ))}
+            </text>
+          </g>
+        ))}
+      </svg>
+      <figcaption className="mt-1 text-center text-[12px] text-[#5d6470]">
+        EBITDA of {fmtMoney(ebitda)}/year is the cash flow measured against total debt service for DSCR.
       </figcaption>
     </figure>
   );

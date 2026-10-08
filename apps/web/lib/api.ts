@@ -192,6 +192,7 @@ export interface AssessmentReport {
   session_id: string;
   product_code: string;
   product_name: string | null;
+  loan_type: string | null;
   status: string;
   generated_at: string;
   group_scores: Partial<Record<FiveC, AssessmentGroupScore>>;

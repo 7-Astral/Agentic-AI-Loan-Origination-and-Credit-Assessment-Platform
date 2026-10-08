@@ -245,6 +245,7 @@ class ApplicationReportOut(BaseModel):
     bank_id: str
     product_code: str
     product_name: str | None = None
+    loan_type: str | None = None
     status: str
     generated_at: datetime
     group_scores: dict[str, GroupScoreOut]

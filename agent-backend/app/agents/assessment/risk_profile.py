@@ -58,6 +58,20 @@ def build_risk_profile(
             "detail": "The applicant's employer is in an industry this lender treats as higher risk.",
         })
 
+    dscr = _metric_value(metrics, "dscr")
+    if dscr is not None and dscr < 1.25:
+        factors.append({
+            "severity": HIGH, "label": "Debt service cover below policy",
+            "detail": f"DSCR is {dscr}x, below the usual 1.25x-1.50x target for business lending.",
+        })
+
+    concentration = _metric_value(metrics, "industry_concentration_status")
+    if concentration == "restricted":
+        factors.append({
+            "severity": HIGH, "label": "Sector concentration restricted",
+            "detail": "The bank's internal policy currently restricts new lending in this industry sector.",
+        })
+
     deposit_source = filled.get("deposit_source")
     if deposit_source and deposit_source != "genuine_savings":
         factors.append({

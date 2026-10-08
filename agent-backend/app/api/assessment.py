@@ -7,7 +7,7 @@ from sqlalchemy import select
 from app.agents.assessment.narrative import generate_narrative, is_template
 from app.agents.assessment.report_extras import assemble_report_extras
 from app.agents.assessment.risk_profile import build_risk_profile
-from app.agents.assessment.run import _load_policy, run_retail_assessment
+from app.agents.assessment.run import _load_policy, run_assessment
 from app.api.interview import _interview_config, _resolve_stage
 from app.api.schemas import ApplicationReportOut
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,7 +29,7 @@ async def get_assessment(request: Request, session_id: str, db: AsyncSession = D
 
     interview_graph = request.app.state.interview_graph
     try:
-        result = await run_retail_assessment(interview_graph, _interview_config(session_id), db, session_id)
+        result = await run_assessment(interview_graph, _interview_config(session_id), db, session_id)
     except ValueError as exc:
         raise HTTPException(409, str(exc))
 
@@ -41,9 +41,17 @@ async def _latest_persisted_report(db: AsyncSession, session_id: str) -> Applica
     if application is None:
         raise HTTPException(404, "Unknown session")
 
+    # Snapshotted immediately for the same reason as the AssessmentResult
+    # fields below — `application` is also expired by that rollback, and its
+    # attributes get read again in the final return statement.
+    application_id = application.id
+    application_bank_id = application.bank_id
+    application_product_code = application.product_code
+    application_status = application.status
+
     latest = await db.execute(
         select(AssessmentResult)
-        .where(AssessmentResult.application_id == application.id)
+        .where(AssessmentResult.application_id == application_id)
         .order_by(AssessmentResult.created_at.desc())
         .limit(1)
     )
@@ -52,48 +60,68 @@ async def _latest_persisted_report(db: AsyncSession, session_id: str) -> Applica
         raise HTTPException(409, "No assessment available for this application yet")
 
     product: dict = {}
-    if application.product_code:
+    if application_product_code:
         try:
-            product = await core_banking.get_product(application.product_code, bank_id=application.bank_id)
+            product = await core_banking.get_product(application_product_code, bank_id=application_bank_id)
         except Exception:
             product = {}
 
     metrics = result.metrics or {}
-    filled = await get_filled_from_slots(db, application.id)
-    nsr_minimum = await _load_policy("nsr_minimum", application.bank_id)
+
+    # Snapshot every attribute we need off `result` into plain variables before
+    # calling assemble_report_extras(): it can hit a missing-table error (the
+    # policy-RAG check needs a migration this env hasn't run) that's caught and
+    # recovered with a db.rollback() — which expires every object already
+    # loaded on this session. Touching `result.*` again afterwards would try
+    # an implicit lazy-refresh, which AsyncSession can't do outside an await
+    # and raises MissingGreenlet.
+    created_at = result.created_at
+    group_scores = result.group_scores or {}
+    overall_score = result.overall_score
+    weights_applied = result.weights_applied or {}
+    score_bands_applied = result.score_bands_applied or {}
+    tier = result.tier or "underwriter_review"
+    data_completeness = result.data_completeness or {}
+    conditions_of_approval = result.conditions_of_approval or []
+    rule_results = result.rule_results or []
+    route = result.route
+    metrics_computed = result.metrics_computed
+    metrics_total = result.metrics_total
+    narrative_summary = result.narrative_summary
+
+    filled = await get_filled_from_slots(db, application_id)
+    nsr_minimum = await _load_policy("nsr_minimum", application_bank_id)
     extras = await assemble_report_extras(
-        db, application.id, application.bank_id, application.product_code,
+        db, application_id, application_bank_id, application_product_code,
         product, {"nsr_minimum": nsr_minimum}, metrics, filled,
     )
 
-    narrative_summary = result.narrative_summary
     if not narrative_summary or is_template(narrative_summary):
         narrative_summary = None
 
-    risk_profile = build_risk_profile(
-        result.rule_results or [], metrics, filled, result.data_completeness or {},
-    )
+    risk_profile = build_risk_profile(rule_results, metrics, filled, data_completeness)
 
     return ApplicationReportOut(
         session_id=session_id,
-        bank_id=application.bank_id,
-        product_code=application.product_code or "",
+        bank_id=application_bank_id,
+        product_code=application_product_code or "",
         product_name=product.get("name"),
-        status=application.status,
-        generated_at=result.created_at,
-        group_scores=result.group_scores or {},
-        overall_score=result.overall_score,
-        weights_applied=result.weights_applied or {},
-        score_bands_applied=result.score_bands_applied or {},
-        tier=result.tier or "underwriter_review",
-        data_completeness=result.data_completeness or {},
-        conditions_of_approval=result.conditions_of_approval or [],
-        rule_results=result.rule_results or [],
-        rule_based_indicator=result.route or {
+        loan_type=product.get("loan_type"),
+        status=application_status,
+        generated_at=created_at,
+        group_scores=group_scores,
+        overall_score=overall_score,
+        weights_applied=weights_applied,
+        score_bands_applied=score_bands_applied,
+        tier=tier,
+        data_completeness=data_completeness,
+        conditions_of_approval=conditions_of_approval,
+        rule_results=rule_results,
+        rule_based_indicator=route or {
             "tier": "underwriter_review", "fail_count": 0, "flag_count": 0, "provisional_count": 0,
         },
-        metrics_computed=result.metrics_computed,
-        metrics_total=result.metrics_total,
+        metrics_computed=metrics_computed,
+        metrics_total=metrics_total,
         narrative_summary=narrative_summary,
         risk_profile=risk_profile,
         **extras,
@@ -115,9 +143,15 @@ async def get_application_report(request: Request, session_id: str, db: AsyncSes
     if application is not None and application.platform_application_id is not None:
         return await _latest_persisted_report(db, session_id)
 
+    # Snapshotted before run_assessment(): it can run the same policy-RAG
+    # check as _latest_persisted_report's assemble_report_extras(), which can
+    # roll back the session and expire `application` — see the comment there.
+    application_bank_id = application.bank_id if application else DEFAULT_BANK_ID
+    application_status = application.status if application else "assessment"
+
     interview_graph = request.app.state.interview_graph
     try:
-        result = await run_retail_assessment(interview_graph, _interview_config(session_id), db, session_id)
+        result = await run_assessment(interview_graph, _interview_config(session_id), db, session_id)
     except ValueError:
         return await _latest_persisted_report(db, session_id)
 
@@ -126,10 +160,11 @@ async def get_application_report(request: Request, session_id: str, db: AsyncSes
 
     return ApplicationReportOut(
         session_id=session_id,
-        bank_id=application.bank_id if application else DEFAULT_BANK_ID,
+        bank_id=application_bank_id,
         product_code=result["product_code"],
         product_name=(result.get("product") or {}).get("name"),
-        status=application.status if application else "assessment",
+        loan_type=(result.get("product") or {}).get("loan_type"),
+        status=application_status,
         generated_at=datetime.now(timezone.utc),
         group_scores=score_report["group_scores"],
         overall_score=score_report["overall_score"],

@@ -10,7 +10,7 @@ import httpx
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from app.agents.assessment.demo_profiles import PRESETS
-from app.agents.assessment.run import run_retail_assessment
+from app.agents.assessment.run import run_assessment
 from app.agents.document.reconcile import reconcile
 from app.agents.document.sample_docs import get_sample, load_recording, sample_file
 from app.agents.interaction.graph import build_graph
@@ -127,7 +127,7 @@ async def main(preset_id: str, email: str, password: str) -> None:
         await _attach_sample_documents(session_id, filled)
 
         async with async_session() as db:
-            assessment = await run_retail_assessment(graph, config, db, session_id)
+            assessment = await run_assessment(graph, config, db, session_id)
 
     result = await core_banking.catalog.submit_application(
         bank_id=bank_id,

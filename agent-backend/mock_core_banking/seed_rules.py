@@ -244,6 +244,176 @@ RULES = [
             "status": "flag", "message": "The applicant works in an industry the bank treats as higher risk",
         },
     },
+
+    # --- Business loan framework ---
+    {
+        "rule_id": "biz_dscr_fail", "framework": "business",
+        "document": {
+            "requires": ["dscr"], "when": "dscr < 1.25", "status": "fail",
+            "message": "Debt service coverage ratio is below the 1.25x policy minimum",
+        },
+    },
+    {
+        "rule_id": "biz_dscr_flag", "framework": "business",
+        "document": {
+            "requires": ["dscr"], "when": "dscr >= 1.25 and dscr < 1.5", "status": "flag",
+            "message": "DSCR meets the minimum but has limited buffer (target 1.25x-1.50x)",
+        },
+    },
+    {
+        "rule_id": "biz_icr_fail", "framework": "business",
+        "document": {
+            "requires": ["icr"], "when": "icr < 1.0", "status": "fail",
+            "message": "Earnings before interest and tax do not cover the interest expense",
+        },
+    },
+    {
+        "rule_id": "biz_icr_flag", "framework": "business",
+        "document": {
+            "requires": ["icr"], "when": "icr >= 1.0 and icr < 2.0", "status": "flag",
+            "message": "Interest coverage is thin",
+        },
+    },
+    {
+        "rule_id": "biz_leverage_high", "framework": "business",
+        "document": {
+            "requires": ["debt_to_equity"], "when": "debt_to_equity > 3", "status": "fail",
+            "message": "Debt-to-equity leverage is very high",
+        },
+    },
+    {
+        "rule_id": "biz_leverage_flag", "framework": "business",
+        "document": {
+            "requires": ["debt_to_equity"], "when": "debt_to_equity > 2 and debt_to_equity <= 3", "status": "flag",
+            "message": "Debt-to-equity leverage is elevated",
+        },
+    },
+    {
+        "rule_id": "biz_liquidity_fail", "framework": "business",
+        "document": {
+            "requires": ["current_ratio"], "when": "current_ratio < 1.0", "status": "fail",
+            "message": "Current liabilities exceed current assets, a short-term liquidity risk",
+        },
+    },
+    {
+        "rule_id": "biz_liquidity_flag", "framework": "business",
+        "document": {
+            "requires": ["current_ratio"], "when": "current_ratio >= 1.0 and current_ratio < 1.2", "status": "flag",
+            "message": "Current ratio is tight",
+        },
+    },
+    {
+        "rule_id": "biz_stressed_dscr_low", "framework": "business",
+        "document": {
+            "requires": ["stressed_dscr"], "when": "stressed_dscr < 1.0", "status": "flag",
+            "message": "Debt service cover would not hold up under a standard cash-flow shock",
+        },
+    },
+    {
+        "rule_id": "biz_trading_history_ineligible", "framework": "business",
+        "document": {
+            "requires": ["trading_history_stability"], "when": "trading_history_stability == 'ineligible'",
+            "status": "fail", "message": "The business has not traded long enough to meet the minimum trading period",
+        },
+    },
+    {
+        "rule_id": "biz_trading_history_review", "framework": "business",
+        "document": {
+            "requires": ["trading_history_stability"], "when": "trading_history_stability == 'review'",
+            "status": "flag", "message": "Time trading is short of the policy comfort threshold",
+        },
+    },
+    {
+        "rule_id": "biz_tax_noncompliant", "framework": "business",
+        "document": {
+            "requires": ["tax_compliance"], "when": "tax_compliance == 'non_compliant'", "status": "flag",
+            "message": "BAS or tax obligations are not currently up to date",
+        },
+    },
+    {
+        "rule_id": "biz_industry_restricted", "framework": "business",
+        "document": {
+            "requires": ["industry_concentration_status"], "when": "industry_concentration_status == 'restricted'",
+            "status": "fail", "message": "The bank's concentration policy currently restricts new lending in this industry",
+        },
+    },
+    {
+        "rule_id": "biz_industry_watchlist", "framework": "business",
+        "document": {
+            "requires": ["industry_concentration_status"], "when": "industry_concentration_status == 'watchlist'",
+            "status": "flag", "message": "The bank is watching exposure to this industry for concentration",
+        },
+    },
+    {
+        "rule_id": "biz_turnover_volatile", "framework": "business",
+        "document": {
+            "requires": ["turnover_trend_stability"], "when": "turnover_trend_stability == 'volatile'",
+            "status": "flag", "message": "Declared turnover swings materially between the years provided",
+        },
+    },
+    {
+        "rule_id": "biz_purpose_excluded", "framework": "business",
+        "document": {
+            "requires": ["purpose_eligibility"], "when": "purpose_eligibility == 'excluded'",
+            "status": "fail", "message": "The bank does not lend for this purpose on this product",
+        },
+    },
+    {
+        "rule_id": "biz_purpose_not_suited", "framework": "business",
+        "document": {
+            "requires": ["purpose_eligibility"], "when": "purpose_eligibility == 'not_suited_to_product'",
+            "status": "flag", "message": "The stated purpose does not match what this product is for",
+        },
+    },
+    {
+        "rule_id": "biz_purpose_needs_detail", "framework": "business",
+        "document": {
+            "requires": ["purpose_eligibility"], "when": "purpose_eligibility == 'needs_detail'",
+            "status": "flag", "message": "The purpose is 'other', so the specific use of funds needs to be confirmed",
+        },
+    },
+    {
+        "rule_id": "biz_product_limits_breached", "framework": "business",
+        "document": {
+            "requires": ["product_limit_breaches"], "when": "product_limit_breaches > 0",
+            "status": "fail", "message": "The amount or term requested is outside what this product allows",
+        },
+    },
+    {
+        "rule_id": "biz_credit_score_very_low", "framework": "business",
+        "document": {
+            "requires": ["credit_score"], "when": "credit_score < 400", "status": "fail",
+            "message": "The guarantor/director's credit score is in the lowest range",
+        },
+    },
+    {
+        "rule_id": "biz_credit_score_low", "framework": "business",
+        "document": {
+            "requires": ["credit_score"], "when": "credit_score >= 400 and credit_score < 622",
+            "status": "flag", "message": "The guarantor/director's credit score is below the 'good' band",
+        },
+    },
+    {
+        "rule_id": "biz_unpaid_default_present", "framework": "business",
+        "document": {
+            "requires": ["unpaid_defaults"], "when": "unpaid_defaults > 0", "status": "fail",
+            "message": "Unpaid default listed on the guarantor/director's credit file",
+        },
+    },
+    {
+        "rule_id": "biz_paid_default_present", "framework": "business",
+        "document": {
+            "requires": ["paid_defaults"], "when": "paid_defaults > 0", "status": "flag",
+            "message": "Previous default (since paid) on the guarantor/director's credit file",
+        },
+    },
+    {
+        "rule_id": "biz_bankruptcy_or_judgment", "framework": "business",
+        "document": {
+            "requires": ["bankruptcy_judgment_status"], "when": "bankruptcy_judgment_status != 'none'",
+            "status": "fail", "message": "Bankruptcy, debt agreement or unsatisfied court judgment on the guarantor/director's file",
+        },
+    },
 ]
 
 

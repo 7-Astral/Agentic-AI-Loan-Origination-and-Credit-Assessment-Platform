@@ -37,17 +37,41 @@ DEFAULT_METRIC_SCORING: dict[str, dict] = {
         {"equals": "low", "score": 100}, {"equals": "medium", "score": 60},
         {"equals": "high", "score": 20}, {"score": 50},
     ]},
+    "dscr": {"type": "linear_higher_better", "floor": 0, "cap": 3},
+    "icr": {"type": "linear_higher_better", "floor": 0, "cap": 5},
+    "debt_to_equity": {"type": "linear_lower_better", "floor": 0, "cap": 3},
+    "current_ratio": {"type": "linear_higher_better", "floor": 0, "cap": 2},
+    "security_coverage_pct": {"type": "linear_higher_better", "floor": 0, "cap": 200},
+    "stressed_dscr": {"type": "linear_higher_better", "floor": -1, "cap": 2},
+    "trading_history_stability": {"type": "banded", "bands": [
+        {"equals": "stable", "score": 100}, {"equals": "review", "score": 50},
+        {"equals": "ineligible", "score": 0}, {"score": 40},
+    ]},
+    "tax_compliance": {"type": "banded", "bands": [
+        {"equals": "compliant", "score": 100}, {"equals": "non_compliant", "score": 20}, {"score": 50},
+    ]},
+    "industry_concentration_status": {"type": "banded", "bands": [
+        {"equals": "open", "score": 100}, {"equals": "watchlist", "score": 50},
+        {"equals": "restricted", "score": 0}, {"score": 70},
+    ]},
+    "turnover_trend_stability": {"type": "banded", "bands": [
+        {"equals": "stable", "score": 100}, {"equals": "volatile", "score": 50}, {"score": 70},
+    ]},
 }
 
 HEADLINE_METRICS: dict[str, list[str]] = {
-    "capacity": ["nsr", "dti", "dsr"],
-    "capital": ["contribution_pct", "net_asset_position", "genuine_savings"],
+    "capacity": ["nsr", "dti", "dsr", "dscr", "icr"],
+    "capital": ["contribution_pct", "net_asset_position", "genuine_savings", "debt_to_equity", "current_ratio"],
     "character": [
         "credit_score", "worst_rhi_24mo", "unpaid_defaults",
         "enquiry_velocity_6mo", "bankruptcy_judgment_status",
     ],
-    "collateral": ["lvr"],
-    "conditions": ["stressed_nsr", "employment_stability", "industry_sector_risk"],
+    "collateral": ["lvr", "security_coverage_pct"],
+    "conditions": [
+        "stressed_nsr", "employment_stability", "industry_sector_risk", "stressed_dscr",
+        "trading_history_stability", "tax_compliance", "industry_concentration_status",
+        "turnover_trend_stability",
+    ],
 }
 
 

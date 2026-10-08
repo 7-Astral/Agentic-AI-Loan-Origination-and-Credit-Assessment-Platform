@@ -196,6 +196,43 @@ METRIC_SCORING = {
     ]},
 }
 
+# Business-loan additions (2026-10). Seeded as new, later-dated versions below rather
+# than edited in place, so existing policy history for personal/home is untouched.
+BUSINESS_CONDITIONS_POLICY_ADDITIONS = {
+    "min_years_trading_stable": 2,
+    "min_years_trading_review": 1,
+    "cash_flow_shock_pct": 15,
+    "projection_haircut_pct": 25,
+    "turnover_volatility_threshold_pct": 30,
+    "restricted_industries": [],
+    "watchlist_industries": ["construction", "accommodation_food"],
+}
+CONDITIONS_POLICY_V2 = {**CONDITIONS_POLICY, **BUSINESS_CONDITIONS_POLICY_ADDITIONS}
+
+BUSINESS_METRIC_SCORING_ADDITIONS = {
+    "dscr": {"type": "linear_higher_better", "floor": 0, "cap": 3},
+    "icr": {"type": "linear_higher_better", "floor": 0, "cap": 5},
+    "debt_to_equity": {"type": "linear_lower_better", "floor": 0, "cap": 3},
+    "current_ratio": {"type": "linear_higher_better", "floor": 0, "cap": 2},
+    "security_coverage_pct": {"type": "linear_higher_better", "floor": 0, "cap": 200},
+    "stressed_dscr": {"type": "linear_higher_better", "floor": -1, "cap": 2},
+    "trading_history_stability": {"type": "banded", "bands": [
+        {"equals": "stable", "score": 100}, {"equals": "review", "score": 50},
+        {"equals": "ineligible", "score": 0}, {"score": 40},
+    ]},
+    "tax_compliance": {"type": "banded", "bands": [
+        {"equals": "compliant", "score": 100}, {"equals": "non_compliant", "score": 20}, {"score": 50},
+    ]},
+    "industry_concentration_status": {"type": "banded", "bands": [
+        {"equals": "open", "score": 100}, {"equals": "watchlist", "score": 50},
+        {"equals": "restricted", "score": 0}, {"score": 70},
+    ]},
+    "turnover_trend_stability": {"type": "banded", "bands": [
+        {"equals": "stable", "score": 100}, {"equals": "volatile", "score": 50}, {"score": 70},
+    ]},
+}
+METRIC_SCORING_V2 = {**METRIC_SCORING, **BUSINESS_METRIC_SCORING_ADDITIONS}
+
 POLICY_SETTINGS = [
     {
         "key": "shading_rates", "version": "2026.09-v1",
@@ -243,6 +280,16 @@ POLICY_SETTINGS = [
         "key": "metric_scoring", "version": "2026.09-v1",
         "effective_from": date(2026, 1, 1),
         "document": METRIC_SCORING,
+    },
+    {
+        "key": "conditions", "version": "2026.10-v1",
+        "effective_from": date(2026, 10, 8),
+        "document": CONDITIONS_POLICY_V2,
+    },
+    {
+        "key": "metric_scoring", "version": "2026.10-v1",
+        "effective_from": date(2026, 10, 8),
+        "document": METRIC_SCORING_V2,
     },
 ]
 

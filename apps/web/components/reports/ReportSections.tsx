@@ -2,6 +2,12 @@ import type { ReactNode } from "react";
 import { useState } from "react";
 import { IBM_Plex_Mono } from "next/font/google";
 import { BudgetWaterfall, FiveCRadar } from "./ReportCharts";
+import {
+  AnnualReviewSection,
+  EntityIndustryRiskSection,
+  FinancialRatiosSection,
+  ServiceabilityProjectionsSection,
+} from "./BusinessAssessment";
 import type { AssessmentReport, BankPolicyCheckStatus, ChatReport, FiveC, LoanApplicationOut } from "@/lib/api";
 import {
   ANSWER_GROUPS,
@@ -19,7 +25,7 @@ import {
 
 
 
-const mono = IBM_Plex_Mono({ subsets: ["latin"], weight: ["400", "500"] });
+export const mono = IBM_Plex_Mono({ subsets: ["latin"], weight: ["400", "500"] });
 
 export const ui = {
   panel: "rounded-[4px] border border-[#d6d9de] bg-white print:break-inside-avoid",
@@ -44,7 +50,7 @@ export function Pill({ tone, children }: { tone: keyof typeof TIER_PILL; childre
   return <span className={`inline-flex items-center whitespace-nowrap rounded-[3px] px-2 py-0.5 text-[12px] font-medium ${TIER_PILL[tone]}`}>{children}</span>;
 }
 
-function PanelHeader({ title, aside }: { title: ReactNode; aside?: ReactNode }) {
+export function PanelHeader({ title, aside }: { title: ReactNode; aside?: ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-3 border-b border-[#e3e6ea] px-4 py-3">
       <h2 className={ui.panelTitle}>{title}</h2>
@@ -227,7 +233,7 @@ export function RecordTabs<T extends string>({
 }
 
 
-function Section({ title, aside, defaultOpen = true, children }: {
+export function Section({ title, aside, defaultOpen = true, children }: {
   title: string;
   aside?: ReactNode;
   defaultOpen?: boolean;
@@ -253,7 +259,7 @@ function Section({ title, aside, defaultOpen = true, children }: {
   );
 }
 
-function FieldGrid({ fields }: { fields: { label: string; value: ReactNode }[] }) {
+export function FieldGrid({ fields }: { fields: { label: string; value: ReactNode }[] }) {
   return (
     <dl className="grid grid-cols-1 gap-x-8 sm:grid-cols-2">
       {fields.map((f, i) => (
@@ -276,14 +282,44 @@ const FIVE_C_LABEL: Record<FiveC, string> = {
   conditions: "Conditions — purpose and context",
 };
 
-function KpiStrip({ assessment, creditScore }: { assessment: AssessmentReport; creditScore: number | null }) {
+const BUSINESS_KPI_METRICS: { key: string; label: string; note: string; failRuleId: string }[] = [
+  { key: "dscr", label: "DSCR", note: "Target ≥ 1.25x", failRuleId: "biz_dscr_fail" },
+  { key: "debt_to_equity", label: "Leverage", note: "Debt-to-equity", failRuleId: "biz_leverage_high" },
+  { key: "current_ratio", label: "Current ratio", note: "Liquidity", failRuleId: "biz_liquidity_fail" },
+];
+
+function KpiStrip({
+  assessment,
+  chat,
+  creditScore,
+}: {
+  assessment: AssessmentReport;
+  chat: ChatReport | null;
+  creditScore: number | null;
+}) {
   const tier = TIER[assessment.tier] ?? { label: humanize(assessment.tier), tone: "slate" as const, hint: "" };
-  const cells = assessment.policy_comparison.slice(0, 3).map((p) => ({
-    label: p.label,
-    value: fmtMetric(p.value, p.unit),
-    note: `${p.threshold_label.replace(/ \(.*\)$/, "")}: ${fmtMetric(p.threshold, p.unit)}`,
-    ok: p.meets_threshold,
-  }));
+  const isBusiness = assessment.loan_type === "business";
+  const businessMetrics = chat?.assessment?.metrics;
+  const businessRules = chat?.assessment?.rule_results ?? [];
+  const firedRules = new Set(businessRules.map((r) => r.rule_id));
+
+  const cells = isBusiness
+    ? BUSINESS_KPI_METRICS.map((m) => {
+        const entry = businessMetrics?.[m.key];
+        const value = entry?.state === "computed" && typeof entry.value === "number" ? entry.value : null;
+        return {
+          label: m.label,
+          value: value === null ? "—" : `${value.toFixed(2)}x`,
+          note: m.note,
+          ok: value === null ? true : !firedRules.has(m.failRuleId),
+        };
+      })
+    : assessment.policy_comparison.slice(0, 3).map((p) => ({
+        label: p.label,
+        value: fmtMetric(p.value, p.unit),
+        note: `${p.threshold_label.replace(/ \(.*\)$/, "")}: ${fmtMetric(p.threshold, p.unit)}`,
+        ok: p.meets_threshold,
+      }));
 
   return (
     <div className="grid grid-cols-2 border-b border-[#e3e6ea] md:grid-cols-4">
@@ -506,25 +542,39 @@ export function CreditAssessmentTab({
   creditScore: number | null;
 }) {
   const allMetrics = chat?.assessment ? Object.entries(chat.assessment.metrics) : [];
+  const isBusiness = assessment.loan_type === "business";
   return (
     <div>
-      <KpiStrip assessment={assessment} creditScore={creditScore} />
+      <KpiStrip assessment={assessment} chat={chat} creditScore={creditScore} />
       <div className="space-y-4 p-4">
-        <div className="grid grid-cols-1 items-stretch gap-4 xl:grid-cols-2">
-          <div className={ui.panel}>
-            <PanelHeader title="Five C's profile" aside="Score out of 100" />
-            <div className="p-4">
-              <FiveCRadar assessment={assessment} />
+        {isBusiness ? (
+          chat && (
+            <>
+              <FinancialRatiosSection chat={chat} />
+              <ServiceabilityProjectionsSection chat={chat} />
+              <EntityIndustryRiskSection chat={chat} />
+              <AnnualReviewSection assessment={assessment} />
+            </>
+          )
+        ) : (
+          <>
+            <div className="grid grid-cols-1 items-stretch gap-4 xl:grid-cols-2">
+              <div className={ui.panel}>
+                <PanelHeader title="Five C's profile" aside="Score out of 100" />
+                <div className="p-4">
+                  <FiveCRadar assessment={assessment} />
+                </div>
+              </div>
+              <div className={ui.panel}>
+                <PanelHeader title="Monthly budget" aside="After the new repayment" />
+                <div className="p-4">
+                  <BudgetWaterfall assessment={assessment} />
+                </div>
+              </div>
             </div>
-          </div>
-          <div className={ui.panel}>
-            <PanelHeader title="Monthly budget" aside="After the new repayment" />
-            <div className="p-4">
-              <BudgetWaterfall assessment={assessment} />
-            </div>
-          </div>
-        </div>
-        <Scorecard assessment={assessment} />
+            <Scorecard assessment={assessment} />
+          </>
+        )}
         <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
           <PolicyChecks assessment={assessment} />
           <KeyFigures assessment={assessment} />
@@ -532,31 +582,32 @@ export function CreditAssessmentTab({
         <BankPolicyCheckCard assessment={assessment} />
       </div>
       <div className="border-t border-[#e3e6ea]">
-        {FIVE_C_ORDER.map((c) => {
-          const group = assessment.group_scores[c];
-          const rows = [
-            ...(group?.metrics_used ?? []).map((m) => ({ label: metricLabel(m.metric), value: fmtMetric(m.raw_value, m.unit) })),
-            ...(group?.metrics_skipped ?? []).map((m) => ({
-              label: metricLabel(m.metric),
-              value: <span className={`italic ${ui.muted}`}>{humanize(m.reason)}</span>,
-            })),
-          ];
-          return (
-            <Section
-              key={c}
-              title={FIVE_C_LABEL[c]}
-              aside={
-                group?.state === "computed" && group.score !== null ? (
-                  <span className="text-[13px] font-semibold tabular-nums text-[#1b1e23]">{group.score.toFixed(0)}</span>
-                ) : (
-                  <span className={`text-[12px] ${ui.muted}`}>Not scored</span>
-                )
-              }
-            >
-              {rows.length > 0 ? <FieldGrid fields={rows} /> : <p className={`text-[13px] ${ui.muted}`}>No metrics for this factor.</p>}
-            </Section>
-          );
-        })}
+        {!isBusiness &&
+          FIVE_C_ORDER.map((c) => {
+            const group = assessment.group_scores[c];
+            const rows = [
+              ...(group?.metrics_used ?? []).map((m) => ({ label: metricLabel(m.metric), value: fmtMetric(m.raw_value, m.unit) })),
+              ...(group?.metrics_skipped ?? []).map((m) => ({
+                label: metricLabel(m.metric),
+                value: <span className={`italic ${ui.muted}`}>{humanize(m.reason)}</span>,
+              })),
+            ];
+            return (
+              <Section
+                key={c}
+                title={FIVE_C_LABEL[c]}
+                aside={
+                  group?.state === "computed" && group.score !== null ? (
+                    <span className="text-[13px] font-semibold tabular-nums text-[#1b1e23]">{group.score.toFixed(0)}</span>
+                  ) : (
+                    <span className={`text-[12px] ${ui.muted}`}>Not scored</span>
+                  )
+                }
+              >
+                {rows.length > 0 ? <FieldGrid fields={rows} /> : <p className={`text-[13px] ${ui.muted}`}>No metrics for this factor.</p>}
+              </Section>
+            );
+          })}
         {allMetrics.length > 0 && (
           <div className="print:hidden">
             <Section title={`All metrics (${allMetrics.length}) — audit view`} defaultOpen={false}>

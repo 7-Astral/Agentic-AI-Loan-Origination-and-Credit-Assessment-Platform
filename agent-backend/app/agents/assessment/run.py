@@ -9,6 +9,11 @@ from app.agents.assessment.retail.metrics.character import assess_character
 from app.agents.assessment.retail.metrics.collateral import assess_collateral
 from app.agents.assessment.retail.metrics.conditions import DEFAULT_CONDITIONS_POLICY, assess_conditions
 from app.agents.assessment.retail.approval_conditions import build_conditions
+from app.agents.assessment.business.metrics.capacity import assess_capacity as assess_business_capacity
+from app.agents.assessment.business.metrics.capital import assess_capital as assess_business_capital
+from app.agents.assessment.business.metrics.collateral import assess_collateral as assess_business_collateral
+from app.agents.assessment.business.metrics.conditions import assess_conditions as assess_business_conditions
+from app.agents.assessment.business.approval_conditions import build_business_conditions
 from app.agents.assessment.rules.engine import evaluate, route
 from app.agents.assessment.scoring import (
     DEFAULT_METRIC_SCORING,
@@ -85,18 +90,31 @@ async def compute_assessment(
             raise ValueError(f"Unknown policy '{key}'. Expected one of {list(POLICY_KEYS)}")
         policy[key] = {**policy[key], **override}
 
-    capacity = assess_capacity(filled, product, policy, bank_transactions)
-    groups = {
-        "capacity": capacity,
-        "conditions": assess_conditions(filled, product, policy, capacity),
-        "character": assess_character(filled, bureau_report),
-        "capital": assess_capital(filled, product, bank_transactions),
-        "collateral": assess_collateral(filled),
-    }
+    is_business = product["loan_type"] == "business"
+    framework = "business" if is_business else "individual"
+
+    if is_business:
+        capacity = assess_business_capacity(filled, product, policy)
+        groups = {
+            "capacity": capacity,
+            "conditions": assess_business_conditions(filled, product, policy, capacity),
+            "character": assess_character(filled, bureau_report),
+            "capital": assess_business_capital(filled),
+            "collateral": assess_business_collateral(filled),
+        }
+    else:
+        capacity = assess_capacity(filled, product, policy, bank_transactions)
+        groups = {
+            "capacity": capacity,
+            "conditions": assess_conditions(filled, product, policy, capacity),
+            "character": assess_character(filled, bureau_report),
+            "capital": assess_capital(filled, product, bank_transactions),
+            "collateral": assess_collateral(filled),
+        }
     metrics = {name: m for group in groups.values() for name, m in group.items()}
 
-    rules = await core_banking.get_rules("individual", bank_id=bank_id)
-    rule_results = evaluate(rules, metrics, "individual")
+    rules = await core_banking.get_rules(framework, bank_id=bank_id)
+    rule_results = evaluate(rules, metrics, framework)
     route_result = route(rule_results)
 
     score_report = build_score_report(
@@ -105,9 +123,12 @@ async def compute_assessment(
     )
 
     # A recommended decline is not conditionally approved, so it carries no conditions of approval.
-    conditions_of_approval = (
-        [] if score_report["tier"] == "decline_recommended" else build_conditions(filled, product, metrics, rule_results)
-    )
+    if score_report["tier"] == "decline_recommended":
+        conditions_of_approval = []
+    elif is_business:
+        conditions_of_approval = build_business_conditions(filled, product, metrics, rule_results)
+    else:
+        conditions_of_approval = build_conditions(filled, product, metrics, rule_results)
     return {
         "product": product,
         "policy": policy,
@@ -120,7 +141,7 @@ async def compute_assessment(
     }
 
 
-async def run_retail_assessment(interview_graph, interview_config: dict, db: AsyncSession, session_id: str) -> dict:
+async def run_assessment(interview_graph, interview_config: dict, db: AsyncSession, session_id: str) -> dict:
     snapshot = await interview_graph.aget_state(interview_config)
     values = snapshot.values
 

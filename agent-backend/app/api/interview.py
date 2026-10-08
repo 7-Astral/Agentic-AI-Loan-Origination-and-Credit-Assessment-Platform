@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from langgraph.types import Command
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.assessment.run import run_retail_assessment
+from app.agents.assessment.run import run_assessment
 from app.agents.interaction.advisor import answer_question
 from app.agents.interaction.corrections import apply_correction
 from app.agents.interaction.prefill import load_profile_prefill
@@ -344,7 +344,7 @@ async def submit_application(
 
     score_report: dict = {}
     try:
-        assessment = await run_retail_assessment(interview_graph, _interview_config(session_id), db, session_id)
+        assessment = await run_assessment(interview_graph, _interview_config(session_id), db, session_id)
         score_report = assessment.get("score_report") or {}
     except Exception:
         logger.exception("Five C's assessment failed for session %s — continuing with submission", session_id)

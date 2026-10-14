@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from simpleeval import simple_eval
 
+from app.core import observability
 from app.agents.assessment.metric import Metric, MetricState
 
 SEVERITY_ORDER = {"fail": 0, "flag": 1, "provisional": 2, "pass": 3}
@@ -11,6 +12,7 @@ def _plain(value):
     return float(value) if isinstance(value, Decimal) else value
 
 
+@observability.traced("assessment.rules.evaluate")
 def evaluate(rules: list[dict], metrics: dict[str, Metric], framework: str) -> list[dict]:
     scope = {name: m.value for name, m in metrics.items() if m.usable}
     not_applicable = {name for name, m in metrics.items() if m.state == MetricState.NOT_APPLICABLE}
@@ -54,6 +56,7 @@ def evaluate(rules: list[dict], metrics: dict[str, Metric], framework: str) -> l
     return sorted(results, key=lambda r: SEVERITY_ORDER.get(r["status"], 99))
 
 
+@observability.traced("assessment.rules.route")
 def route(rule_results: list[dict], loan_amount: float | None = None) -> dict:
     statuses = {r["status"] for r in rule_results}
 

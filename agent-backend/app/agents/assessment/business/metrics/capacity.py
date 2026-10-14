@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
+from app.core import observability
 from app.agents.assessment.metric import Channel, Metric, MetricState
 from app.agents.assessment.retail.metrics.capacity import assessment_rate, proposed_repayment
 
@@ -78,6 +79,7 @@ def icr(ebit_metric: Metric[Decimal], filled: dict[str, Any]) -> Metric[Decimal]
     })
 
 
+@observability.traced("assessment.business.capacity")
 def assess_capacity(filled: dict[str, Any], product: dict, policy: dict) -> dict[str, Metric]:
     rate = assessment_rate(product["interest_rate"], policy["assessment_rate_buffer"]["buffer_pct"])
     repayment = proposed_repayment(filled.get("loan_amount"), filled.get("loan_term_months"), rate)

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import observability
 from app.agents.policy.generator import generate_policy_answer
 from app.agents.policy.ingest import ingest_policies
 from app.agents.policy.loader import DATA_STATUS
@@ -14,6 +15,7 @@ from app.api.schemas import (
 )
 from app.core.db import get_session
 from app.core.identity import require_role
+from app.core.injection_guard import screen
 
 router = APIRouter(prefix="/api/v1/policies", tags=["policy-rag"])
 
@@ -52,6 +54,7 @@ async def ask_policy(
     db: AsyncSession = Depends(get_session),
 ) -> PolicyAskResponse:
     require_role(authorization, ANY_ROLE)
+    await screen(body.question, "policy")
     chunks = await retrieve_policy_chunks(
         db=db,
         question=body.question,
@@ -60,6 +63,9 @@ async def ask_policy(
         limit=body.top_k,
     )
     answer = await generate_policy_answer(body.question, chunks)
+    observability.trace_io(input=body.question, output=answer)
+    observability.annotate(bank=body.bank, loan_type=body.loan_type, top_k=body.top_k)
+    observability.score("policy.sources_retrieved", len(chunks))
 
     return PolicyAskResponse(
         answer=answer,

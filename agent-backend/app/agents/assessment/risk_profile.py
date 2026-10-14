@@ -1,4 +1,5 @@
 from typing import Any
+from app.core import observability
 
 HIGH = "high"
 MEDIUM = "medium"
@@ -16,6 +17,7 @@ def _metric_value(metrics: dict[str, Any], name: str) -> Any:
     return entry.get("value")
 
 
+@observability.traced("assessment.risk-profile")
 def build_risk_profile(
     rule_results: list[dict],
     metrics: dict[str, Any],

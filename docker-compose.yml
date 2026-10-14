@@ -83,6 +83,7 @@ services:
       - ./agent-backend/uploads:/app/uploads
       - ./data/policies:/app/data/policies:ro
       - fastembed_cache:/app/.fastembed
+      - hf_cache:/app/.hf
     depends_on:
       db:
         condition: service_healthy
@@ -113,3 +114,4 @@ services:
 volumes:
   pgdata:
   fastembed_cache:
+  hf_cache:

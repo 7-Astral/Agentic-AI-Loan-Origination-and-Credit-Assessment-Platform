@@ -1,5 +1,6 @@
 import httpx
 
+from app.core import observability
 from app.core.config import get_settings
 
 DEFAULT_BANK_ID = "default"
@@ -11,19 +12,28 @@ class _BaseClient:
         self._timeout = timeout
         self._headers = {"X-API-Key": api_key}
 
-    async def _get(self, path: str, params: dict | None = None) -> dict:
+    async def _request(self, method: str, path: str, **kwargs) -> dict:
         url = f"{self._base_url}{path}"
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            resp = await client.get(url, params=params, headers=self._headers)
+        with observability.span(
+            f"{type(self).__name__}.{method} {path}", as_type="tool",
+            input={"url": url, **kwargs}, only_in_trace=True,
+        ) as observation:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.request(method, url, headers=self._headers, **kwargs)
+            if observation is not None:
+                observation.update(
+                    output=resp.json() if resp.is_success else resp.text[:1000],
+                    metadata={"status_code": resp.status_code, "elapsed_ms": int(resp.elapsed.total_seconds() * 1000)},
+                    level=None if resp.is_success else "WARNING" if resp.status_code < 500 else "ERROR",
+                )
             resp.raise_for_status()
             return resp.json()
 
+    async def _get(self, path: str, params: dict | None = None) -> dict:
+        return await self._request("GET", path, params=params)
+
     async def _post(self, path: str, json: dict) -> dict:
-        url = f"{self._base_url}{path}"
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            resp = await client.post(url, json=json, headers=self._headers)
-            resp.raise_for_status()
-            return resp.json()
+        return await self._request("POST", path, json=json)
 
 
 class CatalogClient(_BaseClient):

@@ -1,5 +1,6 @@
 from typing import Any
 
+from app.core import observability
 from app.agents.interaction.extractor import extract
 from app.agents.interaction.graph import _income_conflict, _pair_with_frequency
 from app.agents.interaction.periods import read_stated_amount, to_annual, to_monthly
@@ -8,6 +9,7 @@ from app.agents.interaction.validation import ValidationError, validate
 INCOME_SLOTS = ("gross_annual_income", "net_income_amount", "net_income_frequency")
 
 
+@observability.traced("interview.apply-correction", as_type="chain", omit=("slots",))
 async def apply_correction(state: dict, message: str) -> dict[str, Any]:
     slots = state["slots"]
     filled = state.get("filled") or {}

@@ -87,6 +87,7 @@ DOCUMENT_TYPES = [
     {"code": "business_registration", "name": "Business registration (ABN/ACN)"},
     {"code": "financial_statements", "name": "Financial statements (P&L, balance sheet)"},
     {"code": "ato_position", "name": "ATO position statement"},
+    {"code": "entity_documents", "name": "Trust deed, partnership agreement or company constitution"},
 ]
 
 DOCUMENT_REQUIREMENTS = [
@@ -114,19 +115,27 @@ DOCUMENT_REQUIREMENTS = [
 
     {"loan_type_code": "business", "category_code": "term", "document_type_code": "primary_photo_id"},
     {"loan_type_code": "business", "category_code": "term", "document_type_code": "business_registration"},
-    {"loan_type_code": "business", "category_code": "term", "document_type_code": "bank_statements"},
-    {"loan_type_code": "business", "category_code": "term", "document_type_code": "tax_return"},
+    {"loan_type_code": "business", "category_code": "term", "document_type_code": "entity_documents"},
     {"loan_type_code": "business", "category_code": "term", "document_type_code": "financial_statements"},
+    {"loan_type_code": "business", "category_code": "term", "document_type_code": "tax_return"},
+    {"loan_type_code": "business", "category_code": "term", "document_type_code": "ato_position"},
+    {"loan_type_code": "business", "category_code": "term", "document_type_code": "bank_statements"},
 
     {"loan_type_code": "business", "category_code": "overdraft", "document_type_code": "primary_photo_id"},
     {"loan_type_code": "business", "category_code": "overdraft", "document_type_code": "business_registration"},
-    {"loan_type_code": "business", "category_code": "overdraft", "document_type_code": "bank_statements"},
+    {"loan_type_code": "business", "category_code": "overdraft", "document_type_code": "entity_documents"},
+    {"loan_type_code": "business", "category_code": "overdraft", "document_type_code": "financial_statements"},
     {"loan_type_code": "business", "category_code": "overdraft", "document_type_code": "tax_return"},
+    {"loan_type_code": "business", "category_code": "overdraft", "document_type_code": "ato_position"},
+    {"loan_type_code": "business", "category_code": "overdraft", "document_type_code": "bank_statements"},
 
     {"loan_type_code": "business", "category_code": "equipment", "document_type_code": "primary_photo_id"},
     {"loan_type_code": "business", "category_code": "equipment", "document_type_code": "business_registration"},
-    {"loan_type_code": "business", "category_code": "equipment", "document_type_code": "bank_statements"},
+    {"loan_type_code": "business", "category_code": "equipment", "document_type_code": "entity_documents"},
+    {"loan_type_code": "business", "category_code": "equipment", "document_type_code": "financial_statements"},
     {"loan_type_code": "business", "category_code": "equipment", "document_type_code": "tax_return"},
+    {"loan_type_code": "business", "category_code": "equipment", "document_type_code": "ato_position"},
+    {"loan_type_code": "business", "category_code": "equipment", "document_type_code": "bank_statements"},
     {"loan_type_code": "business", "category_code": "equipment", "document_type_code": "contract_of_sale"},
 ]
 

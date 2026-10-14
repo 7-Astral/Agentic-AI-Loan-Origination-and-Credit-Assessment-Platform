@@ -3,7 +3,9 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from app.core import observability
 from app.core.llm import as_text, get_llm
+from app.core.output_guard import safe_customer_text
 
 SYSTEM = """You are a bank's loan assistant. The customer has finished the application
 interview for the loan product described below and has not submitted it yet. They have
@@ -30,6 +32,7 @@ FALLBACK = (
 )
 
 
+@observability.traced("interview.advisor-answer", as_type="chain", omit=("slots",))
 async def answer_question(
     message: str,
     product: dict | None,
@@ -49,6 +52,6 @@ async def answer_question(
         resp = await llm.ainvoke(
             [SystemMessage(content=SYSTEM), HumanMessage(content=json.dumps(payload, ensure_ascii=False, default=str))]
         )
-        return as_text(resp).strip() or FALLBACK
+        return safe_customer_text(as_text(resp).strip(), "advisor") or FALLBACK
     except Exception:
         return FALLBACK

@@ -5,9 +5,12 @@ import asyncio
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from app.core import observability
 from app.agents.document.pdf_text import read_bank_statement_pdf
-from app.agents.document.schemas import EXTRACTION_SCHEMAS
+from app.agents.document.schemas import EXTRACTION_SCHEMAS, FIELD_GUIDANCE
+from app.agents.output_schemas import DocumentExtraction
 from app.core.llm import as_text, get_llm
+from app.core.output_guard import parse_json
 
 SYSTEM = """You extract structured data from a financial document image or PDF
 for an Australian loan application.
@@ -31,18 +34,14 @@ Rules:
 - transaction_list fields: an array of {"date": "YYYY-MM-DD", "description": str,
   "amount": number, "direction": "credit"|"debit"}, one entry per line visible
   on the statement.
-- text: exactly as written on the document."""
+- text: exactly as written on the document.
+- field_guidance, when given, says what each field means for this document type.
+  Follow it; it never permits guessing.
+- Financial statements often show the current year beside comparative years.
+  Read each figure from the column for the year the field asks for."""
 
 
-def _parse(raw: str) -> dict:
-    text = raw.strip()
-    if text.startswith("```"):
-        text = text.split("```")[1]
-        if text.startswith("json"):
-            text = text[4:]
-    return json.loads(text.strip())
-
-
+@observability.traced("document.extract-fields", as_type="chain", omit=("content",))
 async def extract(verification_type: str, content: bytes, content_type: str) -> dict:
     fields = EXTRACTION_SCHEMAS.get(verification_type)
     if not fields:
@@ -63,6 +62,8 @@ async def extract(verification_type: str, content: bytes, content_type: str) -> 
     data_url = f"data:{content_type};base64,{b64}"
 
     payload = {"claimed_document_type": verification_type, "fields_to_extract": fields}
+    if verification_type in FIELD_GUIDANCE:
+        payload["field_guidance"] = FIELD_GUIDANCE[verification_type]
 
     llm = get_llm("document")
     messages = [
@@ -87,9 +88,8 @@ async def extract(verification_type: str, content: bytes, content_type: str) -> 
             "notes": f"Extraction service unavailable after retries: {last_error}",
         }
 
-    try:
-        parsed = _parse(as_text(resp))
-    except (json.JSONDecodeError, IndexError):
+    parsed = parse_json(as_text(resp), DocumentExtraction, "document-extractor")
+    if parsed is None:
         return {"matches_claimed_type": False, "fields": {}, "method": "ai_vision", "notes": "extraction failed to parse"}
 
     return {

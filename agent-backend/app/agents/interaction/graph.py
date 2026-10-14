@@ -4,6 +4,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
+from app.core import observability
 from app.agents.interaction.extractor import extract
 from app.agents.interaction.periods import PERIODS_PER_YEAR, convert, read_stated_amount, to_annual, to_monthly
 from app.agents.interaction.questioner import ask
@@ -39,11 +40,13 @@ class InterviewState(TypedDict, total=False):
     escalate: bool
 
 
+@observability.traced("interview.select", as_type="chain", omit=("slots",))
 async def select_node(state: InterviewState) -> dict:
     batch = next_batch(state["slots"], state.get("filled") or {})
     return {"current_batch": batch}
 
 
+@observability.traced("interview.compose_question", as_type="chain", omit=("slots",))
 async def compose_question_node(state: InterviewState) -> dict:
     batch = state["current_batch"]
     question = await ask(
@@ -56,6 +59,7 @@ async def compose_question_node(state: InterviewState) -> dict:
     return {"pending_question": question}
 
 
+@observability.traced("interview.ask", as_type="chain", omit=("slots",))
 async def ask_node(state: InterviewState) -> dict:
     batch = state["current_batch"]
     turn = state.get("turn", 0) + 1
@@ -114,6 +118,7 @@ def _income_conflict(values: dict[str, Any]) -> str | None:
     )
 
 
+@observability.traced("interview.ingest", as_type="chain", omit=("slots",))
 async def ingest_node(state: InterviewState) -> dict:
     batch = state["current_batch"]
     reply = state["transcript"][-1]["content"]
@@ -181,6 +186,7 @@ async def ingest_node(state: InterviewState) -> dict:
     }
 
 
+@observability.traced("interview.finish", as_type="chain", omit=("slots",))
 async def finish_node(state: InterviewState) -> dict:
     return {"current_batch": []}
 

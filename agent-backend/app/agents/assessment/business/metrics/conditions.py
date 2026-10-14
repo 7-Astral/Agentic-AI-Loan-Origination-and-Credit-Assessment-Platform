@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
+from app.core import observability
 from app.agents.assessment.metric import Channel, Metric, MetricState
 from app.agents.assessment.retail.metrics.conditions import (
     DEFAULT_CONDITIONS_POLICY,
@@ -152,13 +153,13 @@ def projected_dscr(filled: dict[str, Any], capacity: dict[str, Metric] | None, p
     })
 
 
-def entity_structure_review(filled: dict[str, Any]) -> Metric[str]:
+def entity_structure_review(filled: dict[str, Any], documents_on_file: set[str] | None = None) -> Metric[str]:
     structure = filled.get("entity_structure")
     if structure is None:
         return _unavailable(Channel.DECLARATION)
 
     needs_docs = structure in ENTITY_STRUCTURES_REQUIRING_DOCS
-    has_docs = bool(filled.get("entity_documents_note"))
+    has_docs = bool(filled.get("entity_documents_note")) or "entity_documents" in (documents_on_file or set())
     verdict = "needs_review" if needs_docs and not has_docs else "reviewed"
     return _computed(verdict, Channel.DECLARATION, inputs={
         "entity_structure": structure, "applicant_role": filled.get("applicant_role"),
@@ -166,8 +167,10 @@ def entity_structure_review(filled: dict[str, Any]) -> Metric[str]:
     })
 
 
+@observability.traced("assessment.business.conditions")
 def assess_conditions(
     filled: dict[str, Any], product: dict, policy: dict, capacity: dict[str, Metric] | None = None,
+    documents_on_file: set[str] | None = None,
 ) -> dict[str, Metric]:
     rules = {**DEFAULT_CONDITIONS_POLICY, **DEFAULT_BUSINESS_CONDITIONS_POLICY, **(policy.get("conditions") or {})}
 
@@ -185,5 +188,5 @@ def assess_conditions(
         "turnover_trend_stability": turnover_trend_stability(filled, rules),
         "stressed_dscr": stressed_dscr(capacity, rules),
         "projected_dscr": projected_dscr(filled, capacity, rules),
-        "entity_structure_review": entity_structure_review(filled),
+        "entity_structure_review": entity_structure_review(filled, documents_on_file),
     }

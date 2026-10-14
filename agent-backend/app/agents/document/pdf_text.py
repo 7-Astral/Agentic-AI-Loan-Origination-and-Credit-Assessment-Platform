@@ -6,6 +6,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 
 import pdfplumber
+from app.core import observability
 
 logger = logging.getLogger(__name__)
 
@@ -284,6 +285,7 @@ def parse_bank_statement(doc: PdfDoc) -> dict | None:
     }
 
 
+@observability.traced("document.read-statement-pdf", omit=("content",))
 def read_bank_statement_pdf(content: bytes) -> dict | None:
     """The whole fast path in one call. None means: use the AI instead."""
     doc = read_pdf(content)

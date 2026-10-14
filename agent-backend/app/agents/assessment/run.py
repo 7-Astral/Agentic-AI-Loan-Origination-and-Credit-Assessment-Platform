@@ -3,6 +3,7 @@ from decimal import Decimal
 
 import httpx
 
+from app.core import observability
 from app.agents.assessment.retail.metrics.capacity import assess_capacity
 from app.agents.assessment.retail.metrics.capital import assess_capital
 from app.agents.assessment.retail.metrics.character import assess_character
@@ -49,6 +50,13 @@ async def _get_bank_transactions(db: AsyncSession, session_id: str) -> list[dict
         return None
     return extraction.extracted_fields.get("transactions")
 
+
+async def _get_documents_on_file(db: AsyncSession, session_id: str) -> set[str]:
+    stmt = select(Document.verification_type).where(
+        Document.application_id == uuid.UUID(session_id), Document.status == "extracted"
+    )
+    return set((await db.execute(stmt)).scalars())
+
 POLICY_KEYS = (
     "shading_rates", "hem_benchmarks", "assessment_rate_buffer", "conditions",
     "metric_weights", "score_bands", "metric_scoring",
@@ -62,6 +70,7 @@ _POLICY_FALLBACKS = {
 }
 
 
+@observability.traced("assessment.load-policy", as_type="tool")
 async def _load_policy(key: str, bank_id: str) -> dict:
     try:
         return (await core_banking.get_policy(key, bank_id=bank_id))["document"]
@@ -72,6 +81,7 @@ async def _load_policy(key: str, bank_id: str) -> dict:
         raise
 
 
+@observability.traced("assessment.compute")
 async def compute_assessment(
     filled: dict,
     product_code: str,
@@ -81,6 +91,7 @@ async def compute_assessment(
     bureau_report: dict | None = None,
     policy_overrides: dict[str, dict] | None = None,
     product: dict | None = None,
+    documents_on_file: set[str] | None = None,
 ) -> dict:
     if product is None:
         product = await core_banking.get_product(product_code, bank_id=bank_id)
@@ -97,7 +108,7 @@ async def compute_assessment(
         capacity = assess_business_capacity(filled, product, policy)
         groups = {
             "capacity": capacity,
-            "conditions": assess_business_conditions(filled, product, policy, capacity),
+            "conditions": assess_business_conditions(filled, product, policy, capacity, documents_on_file),
             "character": assess_character(filled, bureau_report),
             "capital": assess_business_capital(filled),
             "collateral": assess_business_collateral(filled),
@@ -129,6 +140,12 @@ async def compute_assessment(
         conditions_of_approval = build_business_conditions(filled, product, metrics, rule_results)
     else:
         conditions_of_approval = build_conditions(filled, product, metrics, rule_results)
+    observability.annotate(framework=framework, product_code=product_code, route=route_result)
+    observability.score("assessment.overall_score", score_report["overall_score"])
+    observability.score("assessment.tier", str(score_report["tier"]))
+    for status in ("fail", "flag", "provisional", "error"):
+        observability.score(f"assessment.rules_{status}", sum(r["status"] == status for r in rule_results))
+    observability.score("assessment.groups_not_assessed", len(score_report["data_completeness"]))
     return {
         "product": product,
         "policy": policy,
@@ -141,6 +158,7 @@ async def compute_assessment(
     }
 
 
+@observability.traced("assessment-agent", as_type="agent", omit=("interview_graph", "db"))
 async def run_assessment(interview_graph, interview_config: dict, db: AsyncSession, session_id: str) -> dict:
     snapshot = await interview_graph.aget_state(interview_config)
     values = snapshot.values
@@ -157,9 +175,11 @@ async def run_assessment(interview_graph, interview_config: dict, db: AsyncSessi
     bank_transactions = await _get_bank_transactions(db, session_id)
     bank_id = await get_bank_id(session_id)
     bureau_report = await get_credit_report(filled)
+    documents_on_file = await _get_documents_on_file(db, session_id)
 
     assessment = await compute_assessment(
-        filled, product_code, bank_id=bank_id, bank_transactions=bank_transactions, bureau_report=bureau_report
+        filled, product_code, bank_id=bank_id, bank_transactions=bank_transactions, bureau_report=bureau_report,
+        documents_on_file=documents_on_file,
     )
     metrics = assessment["metrics"]
     rule_results = assessment["rule_results"]
@@ -181,6 +201,8 @@ async def run_assessment(interview_graph, interview_config: dict, db: AsyncSessi
         db, app_id, bank_id, product_code, assessment["product"], assessment["policy"], plain_metrics, filled,
     )
     risk_profile = build_risk_profile(rule_results, plain_metrics, filled, score_report["data_completeness"])
+    observability.score("assessment.narrative_ai_generated", bool(narrative_ai))
+    observability.score("assessment.metrics_computed_ratio", computed_count / len(metrics) if metrics else 0)
 
     response = {
         "session_id": session_id,

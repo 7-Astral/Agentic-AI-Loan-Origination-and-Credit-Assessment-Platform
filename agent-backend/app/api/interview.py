@@ -22,9 +22,11 @@ from app.api.schemas import (
     StartRequest,
     TurnResponse,
 )
+from app.core import observability
 from app.core.config import get_settings
 from app.core.db import get_session
 from app.core.identity import get_customer_id_from_token
+from app.core.injection_guard import screen
 from app.services.core_banking import core_banking
 
 logger = logging.getLogger(__name__)
@@ -48,6 +50,33 @@ def _discovery_config(session_id: str) -> dict:
 
 def _interview_config(session_id: str) -> dict:
     return {"configurable": {"thread_id": f"{session_id}:interview"}}
+
+async def _run_graph(name: str, graph, graph_input, config: dict) -> dict:
+    with observability.span(name, as_type="agent", input=graph_input) as observation:
+        result = await graph.ainvoke(graph_input, config)
+        if observation is not None:
+            payload = _interrupt_payload(result)
+            observation.update(output={"waiting_for_customer": payload is not None, "prompt": payload})
+        return result
+
+
+def _record_turn(message: str | None, response: TurnResponse) -> TurnResponse:
+    observability.trace_io(
+        input=message,
+        output={"reply": response.note or response.question, "stage": response.stage, "complete": response.complete},
+    )
+    observability.annotate(
+        stage=response.stage,
+        product_code=response.product_code,
+        escalated=response.escalated,
+        progress=response.progress.model_dump() if response.progress else None,
+    )
+    if response.escalated:
+        observability.score("interview.escalated", True)
+    if response.complete:
+        observability.score("interview.complete", True)
+    return response
+
 
 def _hints(batch: list[dict]) -> list[SlotHint]:
     return [
@@ -107,7 +136,9 @@ async def _start_interview(request: Request, session_id: str, product_code: str)
     await set_application_product(session_id, product_code)
     filled, provenance = await load_profile_prefill(await get_applicant_id(session_id), schema["slots"])
 
-    result = await interview_graph.ainvoke(
+    result = await _run_graph(
+        "interview-graph",
+        interview_graph,
         {
             "product_code": schema["product_code"],
             "schema_version": schema["schema_version"],
@@ -208,13 +239,14 @@ async def start_application(
     applicant_id = get_customer_id_from_token(authorization)
     await ensure_application(session_id, bank_id=bank_id, applicant_id=applicant_id)
 
+    observability.annotate(session_id=session_id, bank_id=bank_id, product_code=body.product_code)
     if body.product_code:
-        return await _start_interview(request, session_id, body.product_code)
+        return _record_turn(None, await _start_interview(request, session_id, body.product_code))
 
     discovery_graph = request.app.state.discovery_graph
     bank_id = await get_bank_id(session_id)
-    result = await discovery_graph.ainvoke({"turn": 0, "bank_id": bank_id}, _discovery_config(session_id))
-    return await _discovery_turn(request, session_id, result)
+    result = await _run_graph("discovery-graph", discovery_graph, {"turn": 0, "bank_id": bank_id}, _discovery_config(session_id))
+    return _record_turn(None, await _discovery_turn(request, session_id, result))
 
 
 def _display(value) -> str:
@@ -281,7 +313,7 @@ async def _correction_turn(request: Request, session_id: str, message: str) -> T
     else:
         update.update({"repair": False, "last_error": None, "pending_question": None})
         await graph.aupdate_state(config, update, as_node="ingest")
-        result = await graph.ainvoke(None, config)
+        result = await _run_graph("interview-graph", graph, None, config)
 
     response = await _interview_turn(request, session_id, result)
     response.note = note
@@ -303,19 +335,22 @@ async def send_message(
     stage = await _resolve_stage(request, session_id)
     if stage is None:
         raise HTTPException(404, "Unknown session")
+    observability.trace_io(input=body.message)
+    observability.annotate(stage_before=stage)
+    await screen(body.message, "interview")
     if stage == "complete":
         if await is_submitted(session_id):
             raise HTTPException(409, "This application has already been submitted to the bank")
-        return await _correction_turn(request, session_id, body.message)
+        return _record_turn(body.message, await _correction_turn(request, session_id, body.message))
 
     if stage == "discovery":
         graph, config = request.app.state.discovery_graph, _discovery_config(session_id)
-        result = await graph.ainvoke(Command(resume=body.message), config)
-        return await _discovery_turn(request, session_id, result)
+        result = await _run_graph("discovery-graph", graph, Command(resume=body.message), config)
+        return _record_turn(body.message, await _discovery_turn(request, session_id, result))
 
     graph, config = request.app.state.interview_graph, _interview_config(session_id)
-    result = await graph.ainvoke(Command(resume=body.message), config)
-    return await _interview_turn(request, session_id, result)
+    result = await _run_graph("interview-graph", graph, Command(resume=body.message), config)
+    return _record_turn(body.message, await _interview_turn(request, session_id, result))
 
 
 @router.post("/{session_id}/submit")
@@ -372,6 +407,10 @@ async def submit_application(
         raise HTTPException(503, "The bank's application service is unavailable") from exc
 
     await record_platform_submission(session_id, result["application_id"], result["status"])
+    observability.trace_io(
+        input={"product_code": product_code, "loan_amount": filled.get("loan_amount")},
+        output={"platform_status": result["status"], "tier": score_report.get("tier")},
+    )
     return result
 
 

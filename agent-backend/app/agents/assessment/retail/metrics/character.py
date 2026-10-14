@@ -2,6 +2,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
+from app.core import observability
 from app.agents.assessment.metric import Channel, Metric, MetricState
 
 CHARACTER_METRIC_NAMES = [
@@ -115,6 +116,7 @@ def undisclosed_liabilities(report: dict, filled: dict[str, Any]) -> Metric[Deci
     })
 
 
+@observability.traced("assessment.character")
 def assess_character(filled: dict[str, Any], bureau_report: dict | None = None) -> dict[str, Metric]:
     if bureau_report is None:
         return {name: _unavailable() for name in CHARACTER_METRIC_NAMES}

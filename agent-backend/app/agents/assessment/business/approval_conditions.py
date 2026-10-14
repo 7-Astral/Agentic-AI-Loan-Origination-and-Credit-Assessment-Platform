@@ -1,5 +1,6 @@
 from typing import Any
 
+from app.core import observability
 from app.agents.assessment.metric import Metric
 
 FIVE_C_ORDER = ["capacity", "capital", "character", "collateral", "conditions"]
@@ -7,6 +8,7 @@ FIVE_C_ORDER = ["capacity", "capital", "character", "collateral", "conditions"]
 DSCR_COVENANT_MINIMUM = "1.25x"
 
 
+@observability.traced("assessment.business.approval-conditions")
 def build_business_conditions(
     filled: dict[str, Any], product: dict, metrics: dict[str, Metric], rule_results: list[dict]
 ) -> list[dict]:

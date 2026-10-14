@@ -2,6 +2,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
+from app.core import observability
 from app.agents.assessment.metric import Channel, Metric, MetricState
 
 CONDITIONS_METRIC_NAMES = [
@@ -276,6 +277,7 @@ def industry_sector_risk(filled: dict[str, Any], policy: dict) -> Metric[str]:
     return _computed(policy["industry_risk"].get(industry, "unclassified"), Channel.POLICY, inputs={"industry": industry})
 
 
+@observability.traced("assessment.retail.conditions")
 def assess_conditions(
     filled: dict[str, Any],
     product: dict,

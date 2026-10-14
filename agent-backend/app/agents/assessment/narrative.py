@@ -5,6 +5,7 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from app.core import observability
 from app.core.llm import as_text, get_llm
 
 SYSTEM = """You write a short, plain-English note for a credit officer reviewing
@@ -54,6 +55,7 @@ def _template_narrative(score_report: dict, product_name: str | None) -> str:
     )
 
 
+@observability.traced("assessment.narrative.generate", as_type="chain")
 async def generate_narrative(score_report: dict, product: dict[str, Any] | None) -> tuple[str, bool]:
     product_name = (product or {}).get("name")
     payload = {
@@ -91,6 +93,7 @@ async def generate_narrative(score_report: dict, product: dict[str, Any] | None)
     return _template_narrative(score_report, product_name), False
 
 
+@observability.traced("assessment.narrative")
 async def get_or_generate_narrative(
     score_report: dict, product: dict[str, Any] | None,
     prior_overall_score: float | None, prior_narrative: str | None,

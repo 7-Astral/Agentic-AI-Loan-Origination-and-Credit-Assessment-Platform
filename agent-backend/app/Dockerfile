@@ -2,8 +2,14 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+ENV HF_HOME=/app/.hf
+
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt \
+    && python -m spacy download en_core_web_lg \
+    && printf "enable_metrics=false\nuse_remote_inferencing=false\n" > /root/.guardrailsrc
 
 COPY app ./app
 COPY scripts ./scripts

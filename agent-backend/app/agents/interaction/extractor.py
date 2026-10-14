@@ -3,7 +3,10 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from app.core import observability
+from app.agents.output_schemas import SlotExtraction
 from app.core.llm import as_text, get_llm
+from app.core.output_guard import parse_json
 
 SYSTEM = """You extract structured values from what a loan applicant said.
 
@@ -51,15 +54,7 @@ def _field_spec(slot: dict) -> dict:
     return spec
 
 
-def _parse(raw: str) -> dict:
-    text = raw.strip()
-    if text.startswith("```"):
-        text = text.split("```")[1]
-        if text.startswith("json"):
-            text = text[4:]
-    return json.loads(text.strip())
-
-
+@observability.traced("interview.extract-slots", as_type="chain")
 async def extract(
     batch: list[dict],
     reply: str,
@@ -81,9 +76,8 @@ async def extract(
          HumanMessage(content=json.dumps(prompt, ensure_ascii=False))]
     )
 
-    try:
-        parsed = _parse(as_text(resp))
-    except (json.JSONDecodeError, IndexError):
+    parsed = parse_json(as_text(resp), SlotExtraction, "interaction-extractor")
+    if parsed is None:
         return {"values": {}, "unclear": [s["id"] for s in batch],
                 "notes": "extraction failed to parse"}
 

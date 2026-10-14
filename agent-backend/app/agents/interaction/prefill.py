@@ -3,6 +3,7 @@ from typing import Any
 
 import httpx
 
+from app.core import observability
 from app.agents.interaction.validation import ValidationError, validate
 from app.services.core_banking import core_banking
 
@@ -33,6 +34,7 @@ def prefill_from_profile(slots: list[dict], profile: dict[str, Any]) -> tuple[di
     return filled, provenance
 
 
+@observability.traced("interview.profile-prefill", as_type="tool", omit=("slots",))
 async def load_profile_prefill(
     customer_id: str | None, slots: list[dict]
 ) -> tuple[dict[str, Any], dict[str, dict]]:

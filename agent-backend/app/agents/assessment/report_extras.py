@@ -4,6 +4,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import observability
 from app.agents.policy.check import run_policy_check
 from app.services import operational
 from app.services.core_banking import core_banking
@@ -109,6 +110,7 @@ def build_applicant_summary(filled: dict[str, Any], slot_labels: dict[str, str])
     return summary
 
 
+@observability.traced("assessment.report-extras", omit=("db",))
 async def assemble_report_extras(
     db: AsyncSession,
     application_id: uuid.UUID,

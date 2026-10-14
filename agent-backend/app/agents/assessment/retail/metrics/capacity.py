@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
+from app.core import observability
 from app.agents.assessment.metric import Channel, Metric, MetricState
 from app.agents.assessment.retail import bank_analysis
 FREQUENCY_PER_YEAR = {"weekly": 52, "fortnightly": 26, "monthly": 12, "annually": 1}
@@ -200,6 +201,7 @@ def dsr(income: Metric[Decimal], commitments: Metric[Decimal], repayment: Metric
     return _computed(value, Channel.DERIVED, unit="ratio")
 
 
+@observability.traced("assessment.retail.capacity")
 def assess_capacity(filled: dict[str, Any], product: dict, policy: dict, bank_transactions: list[dict] | None = None) -> dict[str, Metric]:
     gross = gross_annual_income(filled)
     shaded = shaded_income(gross, filled.get("employment_status"), policy["shading_rates"])

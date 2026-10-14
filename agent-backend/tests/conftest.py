@@ -11,6 +11,9 @@ os.environ["CATALOG_API_KEY"] = "test-catalog-key"
 os.environ["CORE_BANKING_API_KEY"] = "test-core-banking-key"
 os.environ.setdefault("GEMINI_API_KEY", "test-gemini-key")  # never actually called — see fake_llm
 os.environ["PLATFORM_BANK_ID"] = ""
+os.environ["PROMPT_GUARD_ENABLED"] = "false"
+os.environ["LANGFUSE_PUBLIC_KEY"] = ""
+os.environ["LANGFUSE_SECRET_KEY"] = ""
 
 import json
 import uuid

@@ -3,11 +3,13 @@ from typing import Any
 
 import httpx
 
+from app.core import observability
 from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
 
+@observability.traced("bureau.credit-report", as_type="tool")
 async def get_credit_report(filled: dict[str, Any], scenario: str | None = None) -> dict | None:
     if not filled.get("credit_check_consent"):
         return None

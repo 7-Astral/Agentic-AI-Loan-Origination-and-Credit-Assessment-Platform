@@ -3,6 +3,7 @@ from functools import lru_cache
 
 from fastembed import TextEmbedding
 
+from app.core import observability
 from app.core.config import get_settings
 from app.models.policy import EMBEDDING_DIMENSIONS
 
@@ -31,11 +32,13 @@ def _embed_query(text: str) -> list[float]:
     return _check([vector.tolist() for vector in _model().query_embed(text)])[0]
 
 
+@observability.traced("policy.embed-documents", as_type="embedding", omit=("texts",), output=lambda vectors: {"count": len(vectors)})
 async def create_embeddings(texts: list[str]) -> list[list[float]]:
     if not texts:
         return []
     return await asyncio.to_thread(_embed_documents, texts)
 
 
+@observability.traced("policy.embed-query", as_type="embedding", output=lambda vector: {"dimensions": len(vector)})
 async def create_query_embedding(text: str) -> list[float]:
     return await asyncio.to_thread(_embed_query, text)

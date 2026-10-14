@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
+from app.core import observability
 from app.agents.assessment.metric import Channel, Metric, MetricState
 from app.agents.assessment.retail import bank_analysis
 
@@ -100,6 +101,7 @@ def net_asset_position(filled: dict[str, Any]) -> Metric[Decimal]:
     })
 
 
+@observability.traced("assessment.retail.capital")
 def assess_capital(
     filled: dict[str, Any], product: dict, bank_transactions: list[dict] | None = None
 ) -> dict[str, Metric]:

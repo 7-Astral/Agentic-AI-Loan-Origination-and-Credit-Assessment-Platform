@@ -22,6 +22,14 @@ pdfplumber
 pgvector
 fastembed
 
+langfuse>=4,<5
+langchain
+presidio-analyzer
+guardrails-ai
+llamafirewall
+huggingface_hub<1.0
+transformers<5
+
 # Validates the JWT services/api issues at login (app/core/identity.py) —
 # must match services/api's own python-jose version.
 python-jose[cryptography]==3.3.0

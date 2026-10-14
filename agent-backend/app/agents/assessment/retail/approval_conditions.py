@@ -1,10 +1,12 @@
 from typing import Any
 
+from app.core import observability
 from app.agents.assessment.metric import Metric
 
 FIVE_C_ORDER = ["capacity", "capital", "character", "collateral", "conditions"]
 
 
+@observability.traced("assessment.retail.approval-conditions")
 def build_conditions(
     filled: dict[str, Any], product: dict, metrics: dict[str, Metric], rule_results: list[dict]
 ) -> list[dict]:

@@ -2,6 +2,7 @@ from typing import Literal
 
 from langchain_core.tools import tool
 
+from app.core import observability
 from app.services.core_banking import core_banking
 
 LoanType = Literal["personal", "home", "business"]
@@ -34,6 +35,7 @@ def _format_product(p: dict) -> str:
 
 
 @tool
+@observability.traced(as_type="tool")
 async def list_loan_types() -> str:
     types = await core_banking.list_loan_types()
     lines = []
@@ -44,6 +46,7 @@ async def list_loan_types() -> str:
 
 
 @tool
+@observability.traced(as_type="tool")
 async def list_products(loan_type: LoanType, category: str | None = None) -> str:
     canonical = normalise_loan_type(loan_type)
     if canonical is None:

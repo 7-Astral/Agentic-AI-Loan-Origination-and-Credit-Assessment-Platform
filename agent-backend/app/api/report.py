@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.document.reconcile import RECONCILIATION_RULES
+from app.agents.document.reconcile import BUSINESS_RECONCILIATION_RULES, RECONCILIATION_RULES
 from app.agents.document.sample_docs import SAMPLES, load_layout, sample_file
 from app.core.db import get_session
 from app.core.service_auth import require_service_api_key
@@ -20,7 +20,8 @@ router = APIRouter(
 
 
 def _extracted_field(verification_type: str, slot_id: str) -> str | None:
-    rule = next((r for r in RECONCILIATION_RULES.get(verification_type, []) if r["slot_id"] == slot_id), None)
+    rules = RECONCILIATION_RULES.get(verification_type, []) + BUSINESS_RECONCILIATION_RULES.get(verification_type, [])
+    rule = next((r for r in rules if r["slot_id"] == slot_id), None)
     return rule["extracted_field"] if rule else None
 
 

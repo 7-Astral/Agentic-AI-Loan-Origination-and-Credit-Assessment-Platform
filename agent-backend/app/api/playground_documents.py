@@ -35,6 +35,7 @@ DOCUMENT_TYPE_NAMES = {
     "business_registration": "Business registration",
     "financial_statements": "Financial statement",
     "ato_position": "ATO position",
+    "entity_documents": "Trust deed, partnership agreement or constitution",
 }
 
 SLOT_LABELS = {

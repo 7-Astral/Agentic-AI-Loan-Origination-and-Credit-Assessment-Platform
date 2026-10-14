@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
+from app.core import observability
 from app.agents.assessment.metric import Channel, Metric, MetricState
 
 COLLATERAL_METRIC_NAMES = ["security_value", "security_coverage_pct", "security_type_risk"]
@@ -57,6 +58,7 @@ def security_type_risk(filled: dict[str, Any]) -> Metric[str]:
     return _computed(SECURITY_TYPE_RISK.get(offered, "medium"), Channel.DECLARATION, inputs={"security_offered": offered})
 
 
+@observability.traced("assessment.business.collateral")
 def assess_collateral(filled: dict[str, Any]) -> dict[str, Metric]:
     value_metric = security_value(filled)
     return {

@@ -50,6 +50,16 @@ class Settings(BaseSettings):
     app_env: str = "local"
     log_level: str = "INFO"
 
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
+    langfuse_host: str = "http://localhost:3001"
+
+    pii_masking_enabled: bool = True
+    pii_spacy_model: str = "en_core_web_lg"
+    pii_score_threshold: float = 0.5
+
+    prompt_guard_enabled: bool = True
+
     # Must match services/api's JWT settings exactly — a chat session
     # authenticates the customer using the same token the main platform
     # issued at login, not a login of its own.

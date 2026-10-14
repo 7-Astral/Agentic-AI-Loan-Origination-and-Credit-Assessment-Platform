@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import observability
 from app.agents.policy.loader import DATA_STATUS, SOURCE
 from app.core.config import get_settings
 from app.models.policy import PolicyChunk
@@ -266,6 +267,7 @@ async def load_policy_rules(db: AsyncSession, bank: str, loan_type: str) -> dict
     return rules
 
 
+@observability.traced("policy.check", omit=("db",))
 async def run_policy_check(
     db: AsyncSession, product: dict[str, Any], metrics: dict[str, Any], filled: dict[str, Any]
 ) -> dict[str, Any]:

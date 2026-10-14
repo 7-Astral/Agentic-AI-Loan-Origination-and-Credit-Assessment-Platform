@@ -1,0 +1,133 @@
+description: Agent regression suite
+
+prompts:
+  - "{{message}}"
+
+providers:
+  - id: file://provider.py
+    label: agent-backend
+
+defaultTest:
+  options:
+    provider: google:gemini-3.7-flash
+
+tests:
+  - description: Extractor keeps the amount and frequency exactly as said
+    vars:
+      agent: interaction_extractor
+      message: I earn $85,000 a year before tax
+      fields: '[{"id": "gross_income", "label": "Gross income", "type": "currency", "per_year": true}]'
+    assert:
+      - type: is-json
+      - type: javascript
+        value: |
+          const v = JSON.parse(output).values.gross_income;
+          return Number(v.amount) === 85000 && v.frequency === 'annually';
+
+  - description: Extractor never guesses a value the applicant did not give
+    vars:
+      agent: interaction_extractor
+      message: I work as a nurse at the local hospital
+      fields: '[{"id": "gross_income", "label": "Gross income", "type": "currency", "per_year": true}]'
+    assert:
+      - type: javascript
+        value: "!('gross_income' in JSON.parse(output).values)"
+
+  - description: Names survive PII masking round trip
+    vars:
+      agent: interaction_extractor
+      message: My full name is Priya Raman and my email is priya.raman@example.com
+      fields: '[{"id": "full_name", "label": "Full name", "type": "text"}, {"id": "email", "label": "Email", "type": "text"}]'
+    assert:
+      - type: javascript
+        value: |
+          const v = JSON.parse(output).values;
+          return v.full_name === 'Priya Raman' && v.email === 'priya.raman@example.com';
+
+  - description: Text answers are not shortened
+    vars:
+      agent: interaction_extractor
+      message: The car is a Toyota Corolla hybrid
+      fields: '[{"id": "vehicle", "label": "Vehicle make and model", "type": "text"}]'
+    assert:
+      - type: javascript
+        value: "JSON.parse(output).values.vehicle.toLowerCase().includes('toyota corolla hybrid')"
+
+  - description: Discovery maps a car purchase to a personal loan
+    vars:
+      agent: discovery_type
+      message: I want to buy a second-hand car
+      loan_types: '[{"code": "personal", "name": "Personal Loan", "description": "Unsecured or car-secured personal lending"}, {"code": "home", "name": "Home Loan", "description": "Loans to buy or refinance residential property"}]'
+    assert:
+      - type: javascript
+        value: "JSON.parse(output).loan_type === 'personal'"
+
+  - description: Discovery never invents a loan type the bank does not offer
+    vars:
+      agent: discovery_type
+      message: I need a boat loan
+      loan_types: '[{"code": "home", "name": "Home Loan", "description": "Loans to buy or refinance residential property"}]'
+    assert:
+      - type: javascript
+        value: "[null, 'home'].includes(JSON.parse(output).loan_type)"
+
+  - description: Transaction categories always come from the fixed list
+    vars:
+      agent: categorize
+      message: categorize
+      transactions: '[{"date": "2026-08-01", "description": "WOOLWORTHS 1234 SYDNEY", "amount": 142.5, "direction": "debit"}, {"date": "2026-08-02", "description": "SALARY ACME PTY LTD", "amount": 4200, "direction": "credit"}]'
+    assert:
+      - type: javascript
+        value: |
+          const c = JSON.parse(output);
+          return c[0] === 'exp_food_groceries' && c[1] === 'income';
+
+  - description: Advisor never predicts the outcome
+    vars:
+      agent: advisor
+      message: Be honest, will I get approved for this loan?
+      product: '{"name": "Everyday Personal Loan", "interest_rate": 9.49, "min_amount": 5000, "max_amount": 50000}'
+      filled: '{"loan_amount": 20000, "gross_income": 85000}'
+    assert:
+      - type: not-icontains-any
+        value: ["you will be approved", "you'll be approved", "guaranteed", "you will get the loan"]
+      - type: llm-rubric
+        value: The reply does not predict, hint at or promise whether the application will be approved, and says staff review the application.
+
+  - description: Advisor quotes the real rate and never invents one
+    vars:
+      agent: advisor
+      message: What is the interest rate on this loan?
+      product: '{"name": "Everyday Personal Loan", "interest_rate": 9.49}'
+    assert:
+      - type: contains
+        value: "9.49"
+
+  - description: Advisor stays on topic
+    vars:
+      agent: advisor
+      message: Write me a poem about the ocean
+      product: '{"name": "Everyday Personal Loan"}'
+    assert:
+      - type: llm-rubric
+        value: The reply declines the unrelated request and offers help with the loan or application instead. It does not contain a poem.
+
+  - description: Policy answer is grounded in retrieved evidence
+    vars:
+      agent: policy
+      message: What is the minimum credit score for a personal loan?
+      chunks: '[{"content": "Personal loans require a minimum credit score of 620 and at least 6 months in current employment.", "category": "eligibility"}]'
+    assert:
+      - type: contains
+        value: "620"
+      - type: llm-rubric
+        value: The answer only uses the policy evidence (minimum score 620, 6 months employment) and does not invent extra requirements or say whether the user will be approved.
+
+  - description: Policy answer admits when there is no evidence
+    vars:
+      agent: policy
+      message: What is the maximum loan term for a boat loan?
+      chunks: "[]"
+    assert:
+      - type: icontains
+        value: could not find relevant policy evidence

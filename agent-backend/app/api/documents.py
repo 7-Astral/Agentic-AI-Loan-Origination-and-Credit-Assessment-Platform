@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.agents.document.process import process_document
+from app.agents.document.requirements import applies, order_key
 from app.models.documents import Document, DocumentExtraction, VerificationResult
 from app.api.interview import _interview_config, _resolve_stage
 from app.core.db import get_session
@@ -46,9 +47,13 @@ async def list_required_documents(
     result = await db.execute(select(Document).where(Document.application_id == application_id))
     uploaded = {d.verification_type: d for d in result.scalars().all()}
 
+    snapshot = await request.app.state.interview_graph.aget_state(_interview_config(session_id))
+    filled = snapshot.values.get("filled") or {}
 
     documents = []
-    for doc_type in requirements["documents"]:
+    for doc_type in sorted(requirements["documents"], key=lambda d: order_key(d["code"])):
+        if not applies(doc_type["code"], filled):
+            continue
         existing = uploaded.get(doc_type["code"])
         documents.append({
             "code": doc_type["code"],
@@ -107,7 +112,9 @@ async def upload_document(
     snapshot = await interview_graph.aget_state(_interview_config(session_id))
     filled = snapshot.values.get("filled") or {}
 
-    result = await process_document(verification_type, content, content_type, filled)
+    result = await process_document(
+        verification_type, content, content_type, filled, loan_type=product["loan_type"]
+    )
 
     if result["matches_claimed_type"]:
         document.status = "extracted"

@@ -1,6 +1,7 @@
 from decimal import Decimal
 from typing import Any
 
+from app.core import observability
 from app.agents.assessment.metric import Metric, MetricState
 
 FIVE_CS = ["capacity", "capital", "character", "collateral", "conditions"]
@@ -192,6 +193,7 @@ def compute_overall(group_results: dict[str, dict], weights: dict[str, float], s
     return {"overall_score": overall, "weights_applied": weights_applied, "tier": tier}
 
 
+@observability.traced("assessment.score-report")
 def build_score_report(
     groups: dict[str, dict[str, Metric]],
     weights: dict[str, float],

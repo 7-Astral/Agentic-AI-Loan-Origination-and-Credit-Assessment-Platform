@@ -6,8 +6,12 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
+from pydantic import BaseModel
 
+from app.core import observability
+from app.agents.output_schemas import CategoryChoice, LoanTypeChoice, ProductChoice
 from app.core.llm import as_text, get_llm
+from app.core.output_guard import parse_json, safe_customer_text
 from app.services.core_banking import DEFAULT_BANK_ID, core_banking
 
 CLASSIFY_TYPE_SYSTEM = """You work out what kind of loan an Australian applicant needs
@@ -71,16 +75,11 @@ class DiscoveryState(TypedDict, total=False):
     turn: int
 
 
-def _parse(raw: str) -> dict:
-    text = raw.strip()
-    if text.startswith("```"):
-        text = text.split("```")[1]
-        if text.startswith("json"):
-            text = text[4:]
-    try:
-        return json.loads(text.strip())
-    except json.JSONDecodeError:
-        return {}
+def _parse(raw: str, model: type[BaseModel], agent: str) -> dict:
+    parsed = parse_json(raw, model, agent) or {}
+    if parsed.get("reply_to_question"):
+        parsed["reply_to_question"] = safe_customer_text(parsed["reply_to_question"], agent)
+    return parsed
 
 
 def _product_brief(p: dict) -> dict:
@@ -107,6 +106,7 @@ def _lt_entry(state: DiscoveryState) -> dict:
     return next((t for t in state.get("loan_types") or [] if t["code"] == loan_type), {})
 
 
+@observability.traced("discovery.greet", as_type="chain", omit=("products",))
 async def greet_node(state: DiscoveryState) -> dict:
     opening = (
         "Hello — I can help you start a loan application. "
@@ -122,6 +122,7 @@ async def greet_node(state: DiscoveryState) -> dict:
     }
 
 
+@observability.traced("discovery.classify_type", as_type="chain", omit=("products",))
 async def classify_type_node(state: DiscoveryState) -> dict:
     reply = state["transcript"][-1]["content"]
     loan_types = state.get("loan_types") or await core_banking.list_loan_types(bank_id=_bank_id(state))
@@ -137,7 +138,7 @@ async def classify_type_node(state: DiscoveryState) -> dict:
             ],
         }, ensure_ascii=False)),
     ])
-    parsed = _parse(as_text(resp))
+    parsed = _parse(as_text(resp), LoanTypeChoice, "discovery-type")
 
     valid_codes = {t["code"] for t in loan_types}
     chosen = parsed.get("loan_type")
@@ -152,6 +153,7 @@ async def classify_type_node(state: DiscoveryState) -> dict:
     }
 
 
+@observability.traced("discovery.clarify_type", as_type="chain", omit=("products",))
 async def clarify_type_node(state: DiscoveryState) -> dict:
     turn = state.get("turn", 0) + 1
     answer = (state.get("pending_answer") or "").strip()
@@ -175,6 +177,7 @@ async def clarify_type_node(state: DiscoveryState) -> dict:
     }
 
 
+@observability.traced("discovery.classify_category", as_type="chain", omit=("products",))
 async def classify_category_node(state: DiscoveryState) -> dict:
     reply = state["transcript"][-1]["content"]
     lt = _lt_entry(state)
@@ -189,7 +192,7 @@ async def classify_category_node(state: DiscoveryState) -> dict:
             "categories": categories,
         }, ensure_ascii=False)),
     ])
-    parsed = _parse(as_text(resp))
+    parsed = _parse(as_text(resp), CategoryChoice, "discovery-category")
 
     valid_codes = {c["code"] for c in categories}
     chosen = parsed.get("category")
@@ -202,6 +205,7 @@ async def classify_category_node(state: DiscoveryState) -> dict:
     }
 
 
+@observability.traced("discovery.clarify_category", as_type="chain", omit=("products",))
 async def clarify_category_node(state: DiscoveryState) -> dict:
     turn = state.get("turn", 0) + 1
     answer = (state.get("pending_answer") or "").strip()
@@ -224,6 +228,7 @@ async def clarify_category_node(state: DiscoveryState) -> dict:
     }
 
 
+@observability.traced("discovery.auto_category", as_type="chain", omit=("products",))
 async def auto_category_node(state: DiscoveryState) -> dict:
     """Only reached when a loan type has 0 or 1 category — nothing to ask."""
     lt = _lt_entry(state)
@@ -231,6 +236,7 @@ async def auto_category_node(state: DiscoveryState) -> dict:
     return {"category": categories[0]["code"] if categories else None}
 
 
+@observability.traced("discovery.present", as_type="chain", omit=("products",))
 async def present_node(state: DiscoveryState) -> dict:
     loan_type = state["loan_type"]
     category = state.get("category")
@@ -280,6 +286,7 @@ async def present_node(state: DiscoveryState) -> dict:
     }
 
 
+@observability.traced("discovery.select", as_type="chain", omit=("products",))
 async def select_node(state: DiscoveryState) -> dict:
     reply = state["transcript"][-1]["content"]
     products = state.get("products") or []
@@ -293,7 +300,7 @@ async def select_node(state: DiscoveryState) -> dict:
             "applicant_reply": reply,
         }, ensure_ascii=False)),
     ])
-    parsed = _parse(as_text(resp))
+    parsed = _parse(as_text(resp), ProductChoice, "discovery-select")
 
     chosen = parsed.get("product_code")
     if chosen not in valid_codes:
@@ -305,6 +312,7 @@ async def select_node(state: DiscoveryState) -> dict:
     }
 
 
+@observability.traced("discovery.done", as_type="chain", omit=("products",))
 async def done_node(state: DiscoveryState) -> dict:
     return {"pending_answer": None}
 

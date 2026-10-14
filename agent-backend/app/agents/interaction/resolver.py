@@ -1,5 +1,6 @@
 from typing import Any
 
+from app.core import observability
 from app.agents.interaction.schema import unfilled_required
 
 GROUP_BATCH_SIZE = {
@@ -20,6 +21,7 @@ def _sort_key(slot: dict, order: dict[str, int]) -> tuple:
     return (slot["phase"], order[slot["id"]])
 
 
+@observability.traced("interview.next-batch", omit=("slots",))
 def next_batch(
     slots: list[dict],
     filled: dict[str, Any],
@@ -51,6 +53,7 @@ def progress(slots: list[dict], filled: dict[str, Any]) -> dict:
     }
 
 
+@observability.traced("interview.commit-values", omit=("slots",))
 def commit(
     filled: dict[str, Any],
     provenance: dict[str, dict],

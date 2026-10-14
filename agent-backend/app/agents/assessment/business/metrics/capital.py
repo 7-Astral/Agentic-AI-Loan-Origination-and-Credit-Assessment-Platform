@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
+from app.core import observability
 from app.agents.assessment.metric import Channel, Metric, MetricState
 from app.agents.assessment.retail.metrics.capital import net_asset_position
 
@@ -45,6 +46,7 @@ def current_ratio(filled: dict[str, Any]) -> Metric[Decimal]:
     })
 
 
+@observability.traced("assessment.business.capital")
 def assess_capital(filled: dict[str, Any]) -> dict[str, Metric]:
     return {
         "debt_to_equity": debt_to_equity(filled),

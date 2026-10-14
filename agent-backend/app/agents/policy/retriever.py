@@ -1,10 +1,12 @@
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import observability
 from app.agents.policy.embeddings import create_query_embedding
 from app.models.policy import PolicyChunk
 
 
+@observability.traced("policy.retrieve", as_type="retriever", omit=("db",), output=lambda chunks: [{"id": c.id, "bank": c.bank, "loan_type": c.loan_type, "category": c.category, "content": c.content} for c in chunks])
 async def retrieve_policy_chunks(
     db: AsyncSession,
     question: str,

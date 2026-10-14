@@ -1,6 +1,7 @@
 import json
 
 from langchain_core.messages import HumanMessage, SystemMessage
+from app.core import observability
 from app.agents.interaction.prompts import (
     GROUP_PREAMBLE,
     GROUP_RULES,
@@ -22,6 +23,7 @@ def _ask_spec(slot: dict) -> dict:
     return spec
 
 
+@observability.traced("interview.compose-question", as_type="chain")
 async def ask(
     batch: list[dict],
     filled: dict,

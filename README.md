@@ -46,6 +46,15 @@ nothing to configure.
    The last command loads the bank policy file into the policy search. It
    takes a minute or two the first time.
 
+   If your database was set up before business loans were added, run these
+   too. They only add what is missing:
+
+   ```bash
+   docker compose exec mock-core-banking python -m mock_core_banking.seed_rules
+   docker compose exec mock-core-banking python -m mock_core_banking.seed_policy
+   docker compose exec mock-core-banking python -m mock_core_banking.seed_documents
+   ```
+
 4. Open http://localhost:3000/login
 
 ## Demo logins

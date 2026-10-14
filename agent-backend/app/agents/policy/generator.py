@@ -1,9 +1,15 @@
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from app.core import observability
 from app.core.llm import as_text, get_llm
+from app.core.output_guard import safe_customer_text
 from app.models.policy import PolicyChunk
 
 NO_EVIDENCE = "I could not find relevant policy evidence for this bank and loan type."
+BLOCKED_ANSWER = (
+    "I can explain what the policy says, but I can't say whether an application will be "
+    "approved. Bank staff review and decide every application."
+)
 
 SYSTEM_PROMPT = """You are the lending policy assistant for an AI loan origination prototype.
 
@@ -31,6 +37,7 @@ def build_context(chunks: list[PolicyChunk]) -> str:
     )
 
 
+@observability.traced("policy.generate-answer", as_type="chain", omit=("chunks",))
 async def generate_policy_answer(question: str, chunks: list[PolicyChunk]) -> str:
     if not chunks:
         return NO_EVIDENCE
@@ -41,4 +48,4 @@ async def generate_policy_answer(question: str, chunks: list[PolicyChunk]) -> st
             HumanMessage(content=question),
         ]
     )
-    return as_text(response)
+    return safe_customer_text(as_text(response), "policy") or BLOCKED_ANSWER

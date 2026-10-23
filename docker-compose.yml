@@ -1,0 +1,117 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: loan_origination
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d loan_origination"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: ./services/api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/loan_origination
+      JWT_SECRET: dev-secret-change-me
+      JWT_ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: "60"
+      AGENT_BACKEND_BASE_URL: http://agent-backend:8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./services/api:/app
+    depends_on:
+      db:
+        condition: service_healthy
+
+ 
+  mock-core-banking:
+    build:
+      context: ./agent-backend
+      dockerfile: mock_core_banking/Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/loan_origination
+    ports:
+      - "9100:9000"
+    volumes:
+      - ./agent-backend/mock_core_banking:/app/mock_core_banking
+    depends_on:
+      db:
+        condition: service_healthy
+
+  mock-bureau:
+    build:
+      context: ./agent-backend
+      dockerfile: mock_bureau/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "9200:9000"
+    volumes:
+      - ./agent-backend/mock_bureau:/app/mock_bureau
+
+  agent-backend:
+    build:
+      context: ./agent-backend
+      dockerfile: app/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./agent-backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/loan_origination
+      LANGGRAPH_DB_URL: postgresql://postgres:postgres@db:5432/loan_origination
+      APP_DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/loan_origination
+      CORE_BANKING_BASE_URL: http://mock-core-banking:9000
+      BUREAU_BASE_URL: http://mock-bureau:9000
+      CATALOG_BASE_URL: http://api:8000
+      PLATFORM_BANK_ID: ""
+      POLICY_CSV_PATH: /app/data/policies/banks_policy.csv
+      POLICY_EMBEDDING_CACHE_DIR: /app/.fastembed
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./agent-backend/app:/app/app
+      - ./agent-backend/uploads:/app/uploads
+      - ./data/policies:/app/data/policies:ro
+      - fastembed_cache:/app/.fastembed
+      - hf_cache:/app/.hf
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_started
+      mock-core-banking:
+        condition: service_started
+      mock-bureau:
+        condition: service_started
+
+  web:
+    build: ./apps/web
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_AGENT_API_URL: http://localhost:8001
+      WATCHPACK_POLLING: "true"
+    depends_on:
+      - api
+      - agent-backend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./apps/web:/app
+      - /app/node_modules
+      - /app/.next
+
+volumes:
+  pgdata:
+  fastembed_cache:
+  hf_cache:

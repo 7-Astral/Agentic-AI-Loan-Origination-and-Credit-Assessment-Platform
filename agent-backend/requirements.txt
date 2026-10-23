@@ -1,0 +1,39 @@
+fastapi
+uvicorn[standard]
+httpx
+pydantic
+pydantic-settings
+python-dotenv
+
+# agent layer
+langgraph
+langchain-core
+langchain-openai
+langchain-google-genai
+
+sqlalchemy[asyncio]
+asyncpg
+alembic
+langgraph-checkpoint-postgres
+psycopg[binary,pool]
+python-multipart
+simpleeval
+pdfplumber
+pgvector
+fastembed
+
+langfuse>=4,<5
+langchain
+presidio-analyzer
+guardrails-ai
+llamafirewall
+huggingface_hub<1.0
+transformers<5
+
+# Validates the JWT services/api issues at login (app/core/identity.py) —
+# must match services/api's own python-jose version.
+python-jose[cryptography]==3.3.0
+
+# Test-only deps (see tests/README.md for how to run the suite)
+pytest==9.1.1
+pytest-asyncio==1.4.0

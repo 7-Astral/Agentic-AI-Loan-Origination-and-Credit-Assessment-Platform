@@ -1,0 +1,62 @@
+name: AI evals
+
+on:
+  pull_request:
+    paths:
+      - "agent-backend/app/**"
+      - "agent-backend/evals/**"
+      - "agent-backend/requirements.txt"
+  workflow_dispatch:
+    inputs:
+      redteam:
+        description: Also run the promptfoo red team
+        type: boolean
+        default: false
+
+jobs:
+  promptfoo:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agent-backend
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GOOGLE_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      PROMPT_GUARD_ENABLED: "false"
+      PROMPTFOO_PYTHON: python
+      PROMPTFOO_DISABLE_TELEMETRY: "1"
+      PROMPTFOO_SELF_HOSTED: "true"
+      PROMPTFOO_DISABLE_REDTEAM_REMOTE_GENERATION: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install agent-backend
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements.txt
+          python -m spacy download en_core_web_lg
+          printf "enable_metrics=false\nuse_remote_inferencing=false\n" > ~/.guardrailsrc
+
+      - name: Regression suite
+        run: npx --yes promptfoo@latest eval -c evals/promptfooconfig.yaml --no-cache -o evals/results/eval.json -o evals/results/eval.html
+
+      - name: Red team
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.redteam }}
+        run: |
+          npx --yes promptfoo@latest redteam generate -c evals/promptfooconfig.redteam.yaml -o evals/results/redteam-tests.yaml
+          npx --yes promptfoo@latest eval -c evals/results/redteam-tests.yaml --no-cache -o evals/results/redteam.json -o evals/results/redteam.html
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: promptfoo-results
+          path: agent-backend/evals/results/

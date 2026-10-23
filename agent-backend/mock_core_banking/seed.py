@@ -1,0 +1,366 @@
+import asyncio
+
+from mock_core_banking.db import engine, async_session
+from mock_core_banking.models import (
+    Bank, Base, LoanType, Category, Product, DocumentType, DocumentRequirement,
+    LoanPolicyRow, PolicySetting, PolicyVersion,
+)
+
+DEFAULT_BANK_ID = "default"
+
+BANK = {
+    "id": DEFAULT_BANK_ID, "name": "Default Bank", "slug": "default",
+    "primary_color": "#0f172a", "status": "active", "integration_type": "manual",
+}
+
+LOAN_TYPES = [
+    {"code": "personal", "name": "Personal Loan",
+     "description": "Unsecured or secured loan for personal use, including vehicles."},
+    {"code": "home", "name": "Home Loan",
+     "description": "Loan to buy, refinance, or invest in residential property."},
+    {"code": "business", "name": "Business Loan",
+     "description": "Term finance for business purposes."},
+]
+
+CATEGORIES = [
+    {"loan_type_code": "personal", "code": "general", "name": "General"},
+    {"loan_type_code": "personal", "code": "vehicle", "name": "Vehicle"},
+    {"loan_type_code": "home", "code": "owner_occupied", "name": "Owner Occupied"},
+    {"loan_type_code": "home", "code": "investment", "name": "Investment"},
+    {"loan_type_code": "business", "code": "term", "name": "Term"},
+    {"loan_type_code": "business", "code": "overdraft", "name": "Overdraft"},
+    {"loan_type_code": "business", "code": "equipment", "name": "Equipment Finance"},
+]
+
+PRODUCTS = [
+    {"product_code": "PL-STD-001", "name": "Standard Personal Loan",
+     "loan_type_code": "personal", "category_code": "general", "secured": False,
+     "min_amount": 5000, "max_amount": 50000, "min_term_months": 12, "max_term_months": 84,
+     "interest_rate": 9.99, "comparison_rate": 10.62, "rate_type": "fixed", "establishment_fee": 295,
+     "features": ["No early repayment fee", "Weekly/fortnightly/monthly repayments"]},
+    {"product_code": "PL-SEC-002", "name": "Secured Personal Loan",
+     "loan_type_code": "personal", "category_code": "general", "secured": True,
+     "min_amount": 10000, "max_amount": 100000, "min_term_months": 12, "max_term_months": 84,
+     "interest_rate": 6.49, "comparison_rate": 7.11, "rate_type": "fixed", "establishment_fee": 395,
+     "features": ["Lower rate for secured asset", "Redraw available"]},
+    {"product_code": "HL-VAR-010", "name": "Flexible Variable Home Loan",
+     "loan_type_code": "home", "category_code": "owner_occupied", "secured": True,
+     "min_amount": 100000, "max_amount": 2000000, "min_term_months": 60, "max_term_months": 360,
+     "interest_rate": 5.94, "comparison_rate": 6.02, "rate_type": "variable", "establishment_fee": 600,
+     "max_lvr": 95, "features": ["Offset account", "Unlimited extra repayments", "Redraw"]},
+    {"product_code": "HL-FIX-011", "name": "3 Year Fixed Home Loan",
+     "loan_type_code": "home", "category_code": "owner_occupied", "secured": True,
+     "min_amount": 100000, "max_amount": 1500000, "min_term_months": 120, "max_term_months": 360,
+     "interest_rate": 5.59, "comparison_rate": 5.98, "rate_type": "fixed", "establishment_fee": 600,
+     "max_lvr": 90, "features": ["Rate certainty for 3 years", "Extra repayments capped at $10k/yr"]},
+    {"product_code": "VL-NEW-020", "name": "New Vehicle Loan",
+     "loan_type_code": "personal", "category_code": "vehicle", "secured": True,
+     "min_amount": 10000, "max_amount": 150000, "min_term_months": 12, "max_term_months": 84,
+     "interest_rate": 6.89, "comparison_rate": 7.44, "rate_type": "fixed", "establishment_fee": 350,
+     "features": ["Vehicles up to 3 years old", "Balloon payment option"]},
+    {"product_code": "VL-USED-021", "name": "Used Vehicle Loan",
+     "loan_type_code": "personal", "category_code": "vehicle", "secured": True,
+     "min_amount": 8000, "max_amount": 100000, "min_term_months": 12, "max_term_months": 72,
+     "interest_rate": 8.49, "comparison_rate": 9.05, "rate_type": "fixed", "establishment_fee": 350,
+     "features": ["Vehicles up to 12 years old at end of term"]},
+    {"product_code": "BL-TERM-030", "name": "Business Term Loan",
+     "loan_type_code": "business", "category_code": "term", "secured": True,
+     "min_amount": 20000, "max_amount": 1000000, "min_term_months": 12, "max_term_months": 180,
+     "interest_rate": 8.25, "comparison_rate": 8.90, "rate_type": "variable", "establishment_fee": 750,
+     "features": ["Interest-only period available", "Property or business assets as security"]},
+    {"product_code": "IL-PROP-040", "name": "Investment Property Loan",
+     "loan_type_code": "home", "category_code": "investment", "secured": True,
+     "min_amount": 150000, "max_amount": 2000000, "min_term_months": 120, "max_term_months": 360,
+     "interest_rate": 6.34, "comparison_rate": 6.48, "rate_type": "variable", "establishment_fee": 700,
+     "max_lvr": 90, "features": ["Interest-only up to 5 years", "Offset account"]},
+]
+
+DOCUMENT_TYPES = [
+    {"code": "primary_photo_id", "name": "Primary photo ID"},
+    {"code": "proof_of_address", "name": "Proof of address"},
+    {"code": "payslip_or_contract", "name": "Payslip or employment contract"},
+    {"code": "payslip_or_tax_return", "name": "Payslip or tax return"},
+    {"code": "bank_statements", "name": "Bank statements"},
+    {"code": "tax_return", "name": "Tax return"},
+    {"code": "loan_statement", "name": "Loan statement"},
+    {"code": "contract_of_sale", "name": "Contract of sale"},
+    {"code": "business_registration", "name": "Business registration (ABN/ACN)"},
+    {"code": "financial_statements", "name": "Financial statements (P&L, balance sheet)"},
+    {"code": "ato_position", "name": "ATO position statement"},
+    {"code": "entity_documents", "name": "Trust deed, partnership agreement or company constitution"},
+]
+
+DOCUMENT_REQUIREMENTS = [
+    {"loan_type_code": "personal", "category_code": "general", "document_type_code": "primary_photo_id"},
+    {"loan_type_code": "personal", "category_code": "general", "document_type_code": "proof_of_address"},
+    {"loan_type_code": "personal", "category_code": "general", "document_type_code": "payslip_or_contract"},
+    {"loan_type_code": "personal", "category_code": "general", "document_type_code": "bank_statements"},
+
+    {"loan_type_code": "personal", "category_code": "vehicle", "document_type_code": "primary_photo_id"},
+    {"loan_type_code": "personal", "category_code": "vehicle", "document_type_code": "proof_of_address"},
+    {"loan_type_code": "personal", "category_code": "vehicle", "document_type_code": "payslip_or_contract"},
+    {"loan_type_code": "personal", "category_code": "vehicle", "document_type_code": "bank_statements"},
+    {"loan_type_code": "personal", "category_code": "vehicle", "document_type_code": "contract_of_sale"},
+
+    {"loan_type_code": "home", "category_code": "owner_occupied", "document_type_code": "primary_photo_id"},
+    {"loan_type_code": "home", "category_code": "owner_occupied", "document_type_code": "proof_of_address"},
+    {"loan_type_code": "home", "category_code": "owner_occupied", "document_type_code": "payslip_or_tax_return"},
+    {"loan_type_code": "home", "category_code": "owner_occupied", "document_type_code": "bank_statements"},
+
+    {"loan_type_code": "home", "category_code": "investment", "document_type_code": "primary_photo_id"},
+    {"loan_type_code": "home", "category_code": "investment", "document_type_code": "proof_of_address"},
+    {"loan_type_code": "home", "category_code": "investment", "document_type_code": "payslip_or_tax_return"},
+    {"loan_type_code": "home", "category_code": "investment", "document_type_code": "bank_statements"},
+    {"loan_type_code": "home", "category_code": "investment", "document_type_code": "loan_statement"},
+
+    {"loan_type_code": "business", "category_code": "term", "document_type_code": "primary_photo_id"},
+    {"loan_type_code": "business", "category_code": "term", "document_type_code": "business_registration"},
+    {"loan_type_code": "business", "category_code": "term", "document_type_code": "entity_documents"},
+    {"loan_type_code": "business", "category_code": "term", "document_type_code": "financial_statements"},
+    {"loan_type_code": "business", "category_code": "term", "document_type_code": "tax_return"},
+    {"loan_type_code": "business", "category_code": "term", "document_type_code": "ato_position"},
+    {"loan_type_code": "business", "category_code": "term", "document_type_code": "bank_statements"},
+
+    {"loan_type_code": "business", "category_code": "overdraft", "document_type_code": "primary_photo_id"},
+    {"loan_type_code": "business", "category_code": "overdraft", "document_type_code": "business_registration"},
+    {"loan_type_code": "business", "category_code": "overdraft", "document_type_code": "entity_documents"},
+    {"loan_type_code": "business", "category_code": "overdraft", "document_type_code": "financial_statements"},
+    {"loan_type_code": "business", "category_code": "overdraft", "document_type_code": "tax_return"},
+    {"loan_type_code": "business", "category_code": "overdraft", "document_type_code": "ato_position"},
+    {"loan_type_code": "business", "category_code": "overdraft", "document_type_code": "bank_statements"},
+
+    {"loan_type_code": "business", "category_code": "equipment", "document_type_code": "primary_photo_id"},
+    {"loan_type_code": "business", "category_code": "equipment", "document_type_code": "business_registration"},
+    {"loan_type_code": "business", "category_code": "equipment", "document_type_code": "entity_documents"},
+    {"loan_type_code": "business", "category_code": "equipment", "document_type_code": "financial_statements"},
+    {"loan_type_code": "business", "category_code": "equipment", "document_type_code": "tax_return"},
+    {"loan_type_code": "business", "category_code": "equipment", "document_type_code": "ato_position"},
+    {"loan_type_code": "business", "category_code": "equipment", "document_type_code": "bank_statements"},
+    {"loan_type_code": "business", "category_code": "equipment", "document_type_code": "contract_of_sale"},
+]
+
+
+from datetime import date
+
+CONDITIONS_POLICY = {
+    "excluded_purposes": {"personal": ["business_use"], "home": [], "business": []},
+    "expected_purposes": {
+        "vehicle": ["purchase_vehicle"],
+        "owner_occupied": ["purchase_property", "home_improvement", "debt_consolidation"],
+        "investment": ["purchase_property"],
+    },
+    "max_age_at_maturity": 70,
+    "income_shock_pct": 10,
+    "max_balloon_pct": 30,
+    "vehicle_age_limits": {
+        "VL-NEW-020": {"basis": "at_application", "max_years": 3},
+        "VL-USED-021": {"basis": "at_end_of_term", "max_years": 12},
+    },
+    "min_tenure_months": {"full_time": 3, "part_time": 6, "casual": 12, "self_employed": 24},
+    "ineligible_employment": ["unemployed", "student"],
+    "review_employment": ["retired"],
+    "industry_risk": {
+        "construction": "high", "accommodation_food": "high", "arts_recreation": "high",
+        "retail_trade": "medium", "agriculture_forestry_fishing": "medium", "mining": "medium",
+        "transport_postal_warehousing": "medium", "administrative_support": "medium",
+        "property_rental": "medium", "wholesale_trade": "medium", "manufacturing": "medium",
+        "utilities": "low", "finance_insurance": "low", "information_media_telecom": "low",
+        "professional_scientific_technical": "low", "public_administration_safety": "low",
+        "education_training": "low", "health_care_social_assistance": "low", "other_services": "medium",
+    },
+}
+
+
+METRIC_WEIGHTS = {
+    "personal": {"capacity": 45, "character": 25, "capital": 10, "collateral": 0, "conditions": 20},
+    "home": {"capacity": 35, "character": 15, "capital": 25, "collateral": 20, "conditions": 5},
+    "business": {"capacity": 30, "character": 20, "capital": 15, "collateral": 20, "conditions": 15},
+}
+
+SCORE_BANDS = {"auto_eligible_min": 80, "underwriter_review_min": 60}
+
+METRIC_SCORING = {
+    "nsr": {"type": "linear_higher_better", "floor": 0, "cap": 3},
+    "dti": {"type": "linear_lower_better", "floor": 0, "cap": 8},
+    "dsr": {"type": "linear_lower_better", "floor": 0, "cap": 1.0},
+    "contribution_pct": {"type": "linear_higher_better", "floor": 0, "cap": 30},
+    "net_asset_position": {"type": "linear_higher_better", "floor": -50000, "cap": 100000},
+    "genuine_savings": {"type": "linear_higher_better", "floor": 0, "cap": 15000},
+    "credit_score": {"type": "linear_higher_better", "floor": 0, "cap": 1200},
+    "worst_rhi_24mo": {"type": "linear_lower_better", "floor": 0, "cap": 3},
+    "unpaid_defaults": {"type": "linear_lower_better", "floor": 0, "cap": 3},
+    "enquiry_velocity_6mo": {"type": "linear_lower_better", "floor": 0, "cap": 10},
+    "bankruptcy_judgment_status": {"type": "banded", "bands": [
+        {"equals": "none", "score": 100}, {"equals": "judgment", "score": 40}, {"score": 0},
+    ]},
+    "lvr": {"type": "linear_lower_better", "floor": 0, "cap": 110},
+    "stressed_nsr": {"type": "linear_higher_better", "floor": -1, "cap": 1.5},
+    "employment_stability": {"type": "banded", "bands": [
+        {"equals": "stable", "score": 100}, {"equals": "review", "score": 50},
+        {"equals": "ineligible", "score": 0}, {"score": 40},
+    ]},
+    "industry_sector_risk": {"type": "banded", "bands": [
+        {"equals": "low", "score": 100}, {"equals": "medium", "score": 60},
+        {"equals": "high", "score": 20}, {"score": 50},
+    ]},
+}
+
+# Business-loan additions (2026-10). Seeded as new, later-dated versions below rather
+# than edited in place, so existing policy history for personal/home is untouched.
+BUSINESS_CONDITIONS_POLICY_ADDITIONS = {
+    "min_years_trading_stable": 2,
+    "min_years_trading_review": 1,
+    "cash_flow_shock_pct": 15,
+    "projection_haircut_pct": 25,
+    "turnover_volatility_threshold_pct": 30,
+    "restricted_industries": [],
+    "watchlist_industries": ["construction", "accommodation_food"],
+}
+CONDITIONS_POLICY_V2 = {**CONDITIONS_POLICY, **BUSINESS_CONDITIONS_POLICY_ADDITIONS}
+
+BUSINESS_METRIC_SCORING_ADDITIONS = {
+    "dscr": {"type": "linear_higher_better", "floor": 0, "cap": 3},
+    "icr": {"type": "linear_higher_better", "floor": 0, "cap": 5},
+    "debt_to_equity": {"type": "linear_lower_better", "floor": 0, "cap": 3},
+    "current_ratio": {"type": "linear_higher_better", "floor": 0, "cap": 2},
+    "security_coverage_pct": {"type": "linear_higher_better", "floor": 0, "cap": 200},
+    "stressed_dscr": {"type": "linear_higher_better", "floor": -1, "cap": 2},
+    "trading_history_stability": {"type": "banded", "bands": [
+        {"equals": "stable", "score": 100}, {"equals": "review", "score": 50},
+        {"equals": "ineligible", "score": 0}, {"score": 40},
+    ]},
+    "tax_compliance": {"type": "banded", "bands": [
+        {"equals": "compliant", "score": 100}, {"equals": "non_compliant", "score": 20}, {"score": 50},
+    ]},
+    "industry_concentration_status": {"type": "banded", "bands": [
+        {"equals": "open", "score": 100}, {"equals": "watchlist", "score": 50},
+        {"equals": "restricted", "score": 0}, {"score": 70},
+    ]},
+    "turnover_trend_stability": {"type": "banded", "bands": [
+        {"equals": "stable", "score": 100}, {"equals": "volatile", "score": 50}, {"score": 70},
+    ]},
+}
+METRIC_SCORING_V2 = {**METRIC_SCORING, **BUSINESS_METRIC_SCORING_ADDITIONS}
+
+POLICY_SETTINGS = [
+    {
+        "key": "shading_rates", "version": "2026.09-v1",
+        "effective_from": date(2026, 1, 1),
+        "document": {
+            "full_time": 1.0,
+            "part_time": 1.0,
+            "casual": 0.8,
+            "self_employed": 0.8,
+        },
+    },
+    {
+        "key": "hem_benchmarks", "version": "2026.09-v1",
+        "effective_from": date(2026, 1, 1),
+        "document": {
+            "1": 2200, "2": 3100, "3": 3700, "4": 4200, "5": 4700,
+        },
+    },
+    {
+        "key": "assessment_rate_buffer", "version": "2026.09-v1",
+        "effective_from": date(2026, 1, 1),
+        "document": {"buffer_pct": 3.0},
+    },
+    {
+        "key": "nsr_minimum", "version": "2026.09-v1",
+        "effective_from": date(2026, 1, 1),
+        "document": {"minimum": 1.0},
+    },
+    {
+        "key": "conditions", "version": "2026.09-v1",
+        "effective_from": date(2026, 1, 1),
+        "document": CONDITIONS_POLICY,
+    },
+    {
+        "key": "metric_weights", "version": "2026.09-v1",
+        "effective_from": date(2026, 1, 1),
+        "document": METRIC_WEIGHTS,
+    },
+    {
+        "key": "score_bands", "version": "2026.09-v1",
+        "effective_from": date(2026, 1, 1),
+        "document": SCORE_BANDS,
+    },
+    {
+        "key": "metric_scoring", "version": "2026.09-v1",
+        "effective_from": date(2026, 1, 1),
+        "document": METRIC_SCORING,
+    },
+    {
+        "key": "conditions", "version": "2026.10-v1",
+        "effective_from": date(2026, 10, 8),
+        "document": CONDITIONS_POLICY_V2,
+    },
+    {
+        "key": "metric_scoring", "version": "2026.10-v1",
+        "effective_from": date(2026, 10, 8),
+        "document": METRIC_SCORING_V2,
+    },
+]
+
+LOAN_POLICY_ROWS = [
+    {
+        "loan_type_code": lt["loan_type_code"], "category_code": lt["code"],
+        "min_age": "18 years", "residency_policy": "Australian citizen or permanent resident",
+        "deposit_lvr_policy": "Max 95% LVR; LMI applies above 80%",
+        "loan_amount_range": "$5,000 - $2,000,000", "max_term": "30 years",
+        "income_cash_flow_policy": "Verified via payslips/tax returns + bank statements",
+        "serviceability_policy": "NSR >= 1.0 at assessment rate (+3% buffer)",
+        "credit_policy": "No defaults in last 12 months; adverse history reviewed case-by-case",
+    }
+    for lt in CATEGORIES
+]
+
+POLICY_VERSION = {
+    "version": "2026.09-v1",
+    "effective_from": date(2026, 1, 1),
+    "notes": "Initial seeded policy version.",
+}
+
+
+async def seed():
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    async with async_session() as session:
+        session.add(Bank(**BANK))
+        await session.flush()
+
+        for lt in LOAN_TYPES:
+            session.add(LoanType(bank_id=DEFAULT_BANK_ID, **lt))
+        await session.flush()
+
+        for c in CATEGORIES:
+            session.add(Category(bank_id=DEFAULT_BANK_ID, **c))
+        await session.flush()
+
+        for p in PRODUCTS:
+            session.add(Product(bank_id=DEFAULT_BANK_ID, **p))
+
+        for dt in DOCUMENT_TYPES:
+            session.add(DocumentType(bank_id=DEFAULT_BANK_ID, **dt))
+        await session.flush()
+
+        for dr in DOCUMENT_REQUIREMENTS:
+            session.add(DocumentRequirement(bank_id=DEFAULT_BANK_ID, **dr))
+
+        for ps in POLICY_SETTINGS:
+            session.add(PolicySetting(bank_id=DEFAULT_BANK_ID, **ps))
+
+        policy_version = PolicyVersion(
+            bank_id=DEFAULT_BANK_ID, status="active", **POLICY_VERSION,
+            loan_policy_rows=[LoanPolicyRow(**row) for row in LOAN_POLICY_ROWS],
+        )
+        session.add(policy_version)
+
+        await session.commit()
+
+    print("Seed complete.")
+
+
+if __name__ == "__main__":
+    asyncio.run(seed())

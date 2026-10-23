@@ -1,0 +1,7 @@
+ARG BASE=agentic-ai-loan-origination-and-credit-assessment-platform-agent-backend
+FROM ${BASE}
+
+RUN pip freeze | grep -iE "^(torch|transformers|huggingface.hub|numpy|tokenizers|safetensors)==" > /tmp/keep.txt \
+    && pip install --no-cache-dir -c /tmp/keep.txt garak
+
+COPY security ./security
